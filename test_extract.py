@@ -24,6 +24,7 @@ def test_sift_on_valid_regions(image_path, depth_path):
     # Convert RGB image to grayscale
     gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
+    display_image("Original Image", gray_img)
     # # Create a mask for non-white regions in the RGB image and non-black regions in the depth map
     # rgb_mask = cv2.inRange(img, (0, 0, 0), (254, 254, 254))  # Mask out white boundaries (255,255,255)
     # depth_mask = (depth_img > 0).astype(np.uint8)  # Mask out black boundaries (depth=0)
@@ -38,7 +39,8 @@ def test_sift_on_valid_regions(image_path, depth_path):
     # sift = cv2.SIFT_create()
     # keypoints, descriptors = sift.detectAndCompute(masked_image, combined_mask)
 
-    #
+    
+    print(gray_img.shape)
     valid_keypoints, valid_descriptors = extract_sift_from_patches(gray_img, depth_img)
     # Draw keypoints on the original image (for visualization)
     # keypoints_img = cv2.drawKeypoints(img, valid_keypoints, None, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)

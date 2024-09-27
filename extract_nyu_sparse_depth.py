@@ -31,6 +31,7 @@ def get_border_params(gray_image, tolerance=0.1, cut_off=20, value=255, level_di
     #     # If the image is already grayscale
     #     gray_image = rgb_image
     # gray_image = np.mean(rgb_image, axis=channel_axis)
+    print(gray_image.shape)
     h, w = gray_image.shape
 
     def num_value_pixels(arr):
@@ -71,6 +72,7 @@ def get_border_params(gray_image, tolerance=0.1, cut_off=20, value=255, level_di
 
 # Function to extract SIFT keypoints and descriptors from an image divided into patches
 def extract_sift_from_patches(image, depth_img, total_keypoints=200, n_rows=4, n_cols=4):
+    print(image.shape)
     height, width = image.shape[:2]
 
     # Get border parameters to define the region of interest (ROI)
@@ -219,5 +221,5 @@ def process_training_data_file(txt_file, total_keypoints=200, n_rows=4, n_cols=4
     print(f"Saved updated text file with sparse depth paths to {output_txt_file}")
 
 # Example usage
-txt_file = 'train_test_inputs/nyu_extract_test.txt'  # Replace with your text file path
-process_training_data_file(txt_file, total_keypoints=200, n_rows=4, n_cols=4)  # Adjust total_keypoints, n_rows, and n_cols as needed
+# txt_file = 'train_test_inputs/nyu_extract_test.txt'  # Replace with your text file path
+# process_training_data_file(txt_file, total_keypoints=200, n_rows=4, n_cols=4)  # Adjust total_keypoints, n_rows, and n_cols as needed
