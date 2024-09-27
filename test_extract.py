@@ -41,15 +41,15 @@ def test_sift_on_valid_regions(image_path, depth_path):
     #
     valid_keypoints, valid_descriptors = extract_sift_from_patches(img, gray_img)
     # Draw keypoints on the original image (for visualization)
-    keypoints_img = cv2.drawKeypoints(img, valid_keypoints, None, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+    # keypoints_img = cv2.drawKeypoints(img, valid_keypoints, None, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
 
-    # Display results
-    display_image("Original Image", img)
-    # display_image("Grayscale Image with Mask Applied", masked_image)
-    display_image("Depth Image", depth_img)
-    display_image("Keypoints in Valid Regions", keypoints_img)
+    # # Display results
+    # display_image("Original Image", img)
+    # # display_image("Grayscale Image with Mask Applied", masked_image)
+    # display_image("Depth Image", depth_img)
+    # display_image("Keypoints in Valid Regions", keypoints_img)
 
-    print(f"Total keypoints detected in valid regions: {len(valid_keypoints)}")
+    # print(f"Total keypoints detected in valid regions: {len(valid_keypoints)}")
 
 # Test paths (replace these with your own image and depth map paths)
 image_path = '/home/jay/shortcuts/datasets/nyu_depth_v2/sync/basement_0001a/rgb_00000.jpg'  # Replace with your image path
