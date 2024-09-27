@@ -235,7 +235,7 @@ ALL_EVAL_DATASETS = ALL_INDOOR + ALL_OUTDOOR
 
 COMMON_TRAINING_CONFIG = {
     "dataset": "nyu",
-    "distributed": True,
+    "distributed": False,
     "workers": 16,
     "clip_grad": 0.1,
     "use_shared_dict": False,

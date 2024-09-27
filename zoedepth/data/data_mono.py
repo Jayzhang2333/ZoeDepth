@@ -28,6 +28,7 @@ import itertools
 import os
 import random
 
+import pandas as pd
 import numpy as np
 import cv2
 import torch
@@ -51,6 +52,100 @@ from .vkitti import get_vkitti_loader
 from .vkitti2 import get_vkitti2_loader
 
 from .preprocess import CropParams, get_white_border, get_black_border
+
+
+
+
+
+def get_distance_maps(height, width, idcs_height, idcs_width):
+    """Generates distance maps from feature points to every pixel."""
+    num_features = len(idcs_height)
+    dist_maps = np.empty((num_features, height, width))
+    
+    for idx in range(num_features):
+        y, x = idcs_height[idx], idcs_width[idx]
+        y_grid, x_grid = np.ogrid[:height, :width]
+        dist_maps[idx] = np.sqrt((y_grid - y) ** 2 + (x_grid - x) ** 2)
+    
+    return dist_maps
+
+def get_probability_maps(distance_maps):
+    """Convert pixel distance to probability."""
+    max_dist = np.sqrt(distance_maps.shape[-2] ** 2 + distance_maps.shape[-1] ** 2)
+    probabilities = np.exp(-distance_maps / max_dist)
+    return probabilities
+
+def get_depth_prior_from_features(features, height=240, width=320):
+    """Takes lists of pixel indices and their respective depth probes and
+    returns a dense depth prior parametrization using NumPy, displaying results
+    using Matplotlib."""
+    
+    batch_size = features.shape[0]
+
+    # depth prior maps
+    prior_maps = np.empty((batch_size, height, width))
+
+    # euclidean distance maps
+    distance_maps = np.empty((batch_size, height, width))
+
+    for i in range(batch_size):
+        # use only entries with valid depth
+        mask = features[i, :, 2] > 0.0
+
+        if not np.any(mask):
+            max_dist = np.sqrt(height ** 2 + width ** 2)
+            prior_maps[i, ...] = 0.0
+            distance_maps[i, ...] = max_dist
+            print(f"WARNING: Img {i+1} has no valid features, using placeholders.")
+            continue
+
+        # get list of indices and depth values
+        idcs_height = np.round(features[i, mask, 0]).astype(int)
+        idcs_width = np.round(features[i, mask, 1]).astype(int)
+        depth_values = features[i, mask, 2]
+
+        # get distance maps for each feature
+        sample_dist_maps = get_distance_maps(height, width, idcs_height, idcs_width)
+
+        # find min and argmin
+        dist_map_min = np.min(sample_dist_maps, axis=0)
+        dist_argmin = np.argmin(sample_dist_maps, axis=0)
+
+        # nearest neighbor prior map
+        prior_map = depth_values[dist_argmin]
+
+        # concat
+        prior_maps[i, ...] = prior_map
+        distance_maps[i, ...] = dist_map_min
+
+        # # Display results for each image
+        # plt.figure(figsize=(10, 5))
+
+        # # Display depth prior map
+        # plt.subplot(1, 2, 1)
+        # plt.title(f"Depth Prior Map {i+1}")
+        # plt.imshow(prior_map, cmap='jet')
+        # plt.colorbar()
+
+        # # Display probability map
+        # plt.subplot(1, 2, 2)
+        # probability_map = get_probability_maps(dist_map_min)
+        # plt.title(f"Probability Map {i+1}")
+        # plt.imshow(probability_map, cmap='jet')
+        # plt.colorbar()
+
+        # plt.show()
+
+    # parametrization (concatenating depth map and probability map for each image)
+    parametrization = np.stack([prior_maps, get_probability_maps(distance_maps)], axis=1)
+
+    return parametrization
+
+def load_features_from_csv(csv_file):
+    """Loads features from a CSV file into a NumPy array."""
+    df = pd.read_csv(csv_file)
+    features = df[['row', 'col', 'depth']].to_numpy()
+    return features
 
 
 def _is_pil_image(img):
@@ -265,6 +360,18 @@ class ImReader:
     # @cache
     def open(self, fpath):
         return Image.open(fpath)
+    
+def generate_sparse_feature_map(featrue_path):
+    features = load_features_from_csv(featrue_path)
+
+    # Reshape features into the required batch format (batch_size, num_features, 3)
+    # Since we're working with one image, we expand the dimensions to simulate a batch of size 1
+    features = features[np.newaxis, :, :]
+
+    # Process and visualize the depth prior
+    parametrization = get_depth_prior_from_features(features, height=480, width=640)
+
+    return parametrization
 
 
 class DataLoadPreprocess(Dataset):
@@ -303,10 +410,14 @@ class DataLoadPreprocess(Dataset):
             else:
                 image_path = os.path.join(
                     self.config.data_path, remove_leading_slash(sample_path.split()[0]))
+                featrue_path = os.path.join(
+                    self.config.data_path, remove_leading_slash(sample_path.split()[-1]))
                 depth_path = os.path.join(
                     self.config.gt_path, remove_leading_slash(sample_path.split()[1]))
 
             image = self.reader.open(image_path)
+            # sparse feature map is numpy array
+            sparse_feature_map = generate_sparse_feature_map(featrue_path)
             depth_gt = self.reader.open(depth_path)
             w, h = image.size
 
@@ -319,6 +430,7 @@ class DataLoadPreprocess(Dataset):
                     (left_margin, top_margin, left_margin + 1216, top_margin + 352))
                 image = image.crop(
                     (left_margin, top_margin, left_margin + 1216, top_margin + 352))
+                sparse_feature_map = sparse_feature_map[top_margin:top_margin + 352, left_margin:left_margin + 1216, :]
 
             # Avoid blank boundaries due to pixel registration?
             # Train images have white border. Test images have black border.
@@ -328,12 +440,18 @@ class DataLoadPreprocess(Dataset):
                 # original_size = image.size
                 crop_params = get_white_border(np.array(image, dtype=np.uint8))
                 image = image.crop((crop_params.left, crop_params.top, crop_params.right, crop_params.bottom))
+                sparse_feature_map = sparse_feature_map[crop_params.top:crop_params.bottom, crop_params.left:crop_params.right, :]
                 depth_gt = depth_gt.crop((crop_params.left, crop_params.top, crop_params.right, crop_params.bottom))
 
                 # Use reflect padding to fill the blank
                 image = np.array(image)
                 image = np.pad(image, ((crop_params.top, h - crop_params.bottom), (crop_params.left, w - crop_params.right), (0, 0)), mode='reflect')
                 image = Image.fromarray(image)
+
+                # sparse_feature_map should already be a numpy array
+                sparse_feature_map = np.pad(sparse_feature_map, ((crop_params.top, h - crop_params.bottom), (crop_params.left, w - crop_params.right)), 'constant', constant_values=0)
+                # I am not sure if this needs to be converted into an image
+                # sparse_feature_map = Image.fromarray(sparse_feature_map)
 
                 depth_gt = np.array(depth_gt)
                 depth_gt = np.pad(depth_gt, ((crop_params.top, h - crop_params.bottom), (crop_params.left, w - crop_params.right)), 'constant', constant_values=0)
@@ -343,10 +461,13 @@ class DataLoadPreprocess(Dataset):
             if self.config.do_random_rotate and (self.config.aug):
                 random_angle = (random.random() - 0.5) * 2 * self.config.degree
                 image = self.rotate_image(image, random_angle)
+                # flag = 0 is the same as 'nearest'
+                sparse_feature_map = self.rotate_feature_map(sparse_feature_map, random_angle, flag=0)
                 depth_gt = self.rotate_image(
                     depth_gt, random_angle, flag=Image.NEAREST)
 
             image = np.asarray(image, dtype=np.float32) / 255.0
+            # sparse_feature_map = np.asarray(sparse_feature_map, dtype=np.float32)
             depth_gt = np.asarray(depth_gt, dtype=np.float32)
             depth_gt = np.expand_dims(depth_gt, axis=2)
 
@@ -356,17 +477,17 @@ class DataLoadPreprocess(Dataset):
                 depth_gt = depth_gt / 256.0
 
             if self.config.aug and (self.config.random_crop):
-                image, depth_gt = self.random_crop(
-                    image, depth_gt, self.config.input_height, self.config.input_width)
+                image, sparse_feature_map, depth_gt = self.random_crop(
+                    image, sparse_feature_map, depth_gt, self.config.input_height, self.config.input_width)
             
             if self.config.aug and self.config.random_translate:
                 # print("Random Translation!")
-                image, depth_gt = self.random_translate(image, depth_gt, self.config.max_translation)
+                image, sparse_feature_map, depth_gt = self.random_translate(image, sparse_feature_map, depth_gt, self.config.max_translation)
 
-            image, depth_gt = self.train_preprocess(image, depth_gt)
+            image, sparse_feature_map, depth_gt = self.train_preprocess(image, sparse_feature_map, depth_gt)
             mask = np.logical_and(depth_gt > self.config.min_depth,
                                   depth_gt < self.config.max_depth).squeeze()[None, ...]
-            sample = {'image': image, 'depth': depth_gt, 'focal': focal,
+            sample = {'image': image, 'sparse_map': sparse_feature_map, 'depth': depth_gt, 'focal': focal,
                       'mask': mask, **sample}
 
         else:
@@ -377,8 +498,13 @@ class DataLoadPreprocess(Dataset):
 
             image_path = os.path.join(
                 data_path, remove_leading_slash(sample_path.split()[0]))
+            
+            feature_path = os.path.join(
+                data_path, remove_leading_slash(sample_path.split()[-1]))
             image = np.asarray(self.reader.open(image_path),
                                dtype=np.float32) / 255.0
+
+            sparse_feature_map = generate_sparse_feature_map(feature_path)
 
             if self.mode == 'online_eval':
                 gt_path = self.config.gt_path_eval
@@ -412,16 +538,20 @@ class DataLoadPreprocess(Dataset):
                 left_margin = int((width - 1216) / 2)
                 image = image[top_margin:top_margin + 352,
                               left_margin:left_margin + 1216, :]
+                
+                sparse_feature_map = sparse_feature_map[top_margin:top_margin + 352,
+                              left_margin:left_margin + 1216, :]
+                
                 if self.mode == 'online_eval' and has_valid_depth:
                     depth_gt = depth_gt[top_margin:top_margin +
                                         352, left_margin:left_margin + 1216, :]
 
             if self.mode == 'online_eval':
-                sample = {'image': image, 'depth': depth_gt, 'focal': focal, 'has_valid_depth': has_valid_depth,
-                          'image_path': sample_path.split()[0], 'depth_path': sample_path.split()[1],
+                sample = {'image': image,'sparse_map': sparse_feature_map, 'depth': depth_gt, 'focal': focal, 'has_valid_depth': has_valid_depth,
+                          'image_path': sample_path.split()[0], 'feature_path': sample_path.split()[-1],'depth_path': sample_path.split()[1],
                           'mask': mask}
             else:
-                sample = {'image': image, 'focal': focal}
+                sample = {'image': image, 'sparse_map': sparse_feature_map,'focal': focal}
 
         if (self.mode == 'train') or ('has_valid_depth' in sample and sample['has_valid_depth']):
             mask = np.logical_and(depth_gt > self.config.min_depth,
@@ -433,29 +563,40 @@ class DataLoadPreprocess(Dataset):
 
         sample = self.postprocess(sample)
         sample['dataset'] = self.config.dataset
-        sample = {**sample, 'image_path': sample_path.split()[0], 'depth_path': sample_path.split()[1]}
+        sample = {**sample, 'image_path': sample_path.split()[0], 'feature_path': sample_path.split()[-1],'depth_path': sample_path.split()[1]}
 
         return sample
 
     def rotate_image(self, image, angle, flag=Image.BILINEAR):
         result = image.rotate(angle, resample=flag)
         return result
+    
+    def rotate_feature_map(self, feature_map, angle, flag=Image.BILINEAR):
+        from scipy.ndimage import rotate
+        rotated_feature_map = rotate(feature_map, angle, reshape=False, order=1)
+        
+        return rotated_feature_map
 
-    def random_crop(self, img, depth, height, width):
+    def random_crop(self, img, feature_map, depth, height, width):
         assert img.shape[0] >= height
         assert img.shape[1] >= width
         assert img.shape[0] == depth.shape[0]
         assert img.shape[1] == depth.shape[1]
+        assert img.shape[1] == feature_map.shape[1]
+        assert img.shape[0] == feature_map.shape[0]
         x = random.randint(0, img.shape[1] - width)
         y = random.randint(0, img.shape[0] - height)
         img = img[y:y + height, x:x + width, :]
+        feature_map = feature_map[y:y + height, x:x + width, :]
         depth = depth[y:y + height, x:x + width, :]
 
-        return img, depth
+        return img,feature_map, depth
     
-    def random_translate(self, img, depth, max_t=20):
+    def random_translate(self, img, feature_map, depth, max_t=20):
         assert img.shape[0] == depth.shape[0]
         assert img.shape[1] == depth.shape[1]
+        assert img.shape[1] == feature_map.shape[1]
+        assert img.shape[0] == feature_map.shape[0]
         p = self.config.translate_prob
         do_translate = random.random()
         if do_translate > p:
@@ -465,17 +606,19 @@ class DataLoadPreprocess(Dataset):
         M = np.float32([[1, 0, x], [0, 1, y]])
         # print(img.shape, depth.shape)
         img = cv2.warpAffine(img, M, (img.shape[1], img.shape[0]))
+        feature_map = cv2.warpAffine(feature_map, M, (img.shape[1], img.shape[0]))
         depth = cv2.warpAffine(depth, M, (depth.shape[1], depth.shape[0]))
         depth = depth.squeeze()[..., None]  # add channel dim back. Affine warp removes it
         # print("after", img.shape, depth.shape)
-        return img, depth
+        return img, feature_map, depth
 
-    def train_preprocess(self, image, depth_gt):
+    def train_preprocess(self, image, feature_map, depth_gt):
         if self.config.aug:
             # Random flipping
             do_flip = random.random()
             if do_flip > 0.5:
                 image = (image[:, ::-1, :]).copy()
+                feature_map = (feature_map[:, ::-1, :]).copy()
                 depth_gt = (depth_gt[:, ::-1, :]).copy()
 
             # Random gamma, brightness, color augmentation
@@ -483,7 +626,7 @@ class DataLoadPreprocess(Dataset):
             if do_augment > 0.5:
                 image = self.augment_image(image)
 
-        return image, depth_gt
+        return image, feature_map, depth_gt
 
     def augment_image(self, image):
         # gamma augmentation
@@ -522,23 +665,26 @@ class ToTensor(object):
             self.resize = nn.Identity()
 
     def __call__(self, sample):
-        image, focal = sample['image'], sample['focal']
+        image, focal, sparse_feature_map = sample['image'], sample['focal'],sample['sparse_map']
         image = self.to_tensor(image)
         image = self.normalize(image)
         image = self.resize(image)
 
+        sparse_feature_map = self.to_tensor(sparse_feature_map)
+        sparse_feature_map = self.resize(sparse_feature_map)
+
         if self.mode == 'test':
-            return {'image': image, 'focal': focal}
+            return {'image': image, 'sparse_map':sparse_feature_map,'focal': focal}
 
         depth = sample['depth']
         if self.mode == 'train':
             depth = self.to_tensor(depth)
-            return {**sample, 'image': image, 'depth': depth, 'focal': focal}
+            return {**sample, 'image': image, 'depth': depth, 'sparse_map':sparse_feature_map, 'focal': focal}
         else:
             has_valid_depth = sample['has_valid_depth']
             image = self.resize(image)
-            return {**sample, 'image': image, 'depth': depth, 'focal': focal, 'has_valid_depth': has_valid_depth,
-                    'image_path': sample['image_path'], 'depth_path': sample['depth_path']}
+            return {**sample, 'image': image, 'depth': depth, 'focal': focal, 'sparse_map':sparse_feature_map, 'has_valid_depth': has_valid_depth,
+                    'image_path': sample['image_path'], 'depth_path': sample['depth_path'], 'depth_path': sample['depth_path'], 'feature_path':sample['feature_path']}
 
     def to_tensor(self, pic):
         if not (_is_pil_image(pic) or _is_numpy_image(pic)):
