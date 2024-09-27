@@ -39,7 +39,7 @@ def test_sift_on_valid_regions(image_path, depth_path):
     # keypoints, descriptors = sift.detectAndCompute(masked_image, combined_mask)
 
     #
-    valid_keypoints, valid_descriptors = extract_sift_from_patches(img, gray_img)
+    valid_keypoints, valid_descriptors = extract_sift_from_patches(gray_img, depth_img)
     # Draw keypoints on the original image (for visualization)
     # keypoints_img = cv2.drawKeypoints(img, valid_keypoints, None, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
 

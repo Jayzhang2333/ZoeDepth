@@ -23,14 +23,14 @@ class CropParams:
     left: int
     right: int
 
-def get_border_params(rgb_image, tolerance=0.1, cut_off=20, value=255, level_diff_threshold=5, channel_axis=-1, min_border=5) -> CropParams:
+def get_border_params(gray_image, tolerance=0.1, cut_off=20, value=255, level_diff_threshold=5, channel_axis=-1, min_border=5) -> CropParams:
     # Convert the image to grayscale by averaging across the color channels
     # if len(rgb_image.shape) == 3:  # Check if it's a color image (has 3 channels)
     #     gray_image = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2GRAY)
     # else:
     #     # If the image is already grayscale
     #     gray_image = rgb_image
-    gray_image = np.mean(rgb_image, axis=channel_axis)
+    # gray_image = np.mean(rgb_image, axis=channel_axis)
     h, w = gray_image.shape
 
     def num_value_pixels(arr):
@@ -124,11 +124,11 @@ def extract_sift_from_patches(image, depth_img, total_keypoints=200, n_rows=4, n
                     all_descriptors.append(patch_descriptors[:keypoints_per_patch])
 
     # Display results
-    display_image("Original Image", image)
-    display_image("Grayscale Image with Mask Applied", combined_mask)
-    display_image("Depth Image", depth_img)
-    keypoints_img = cv2.drawKeypoints(image, all_keypoints, None, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-    display_image("Keypoints in Valid Regions", keypoints_img)
+    # display_image("Original Image", image)
+    # display_image("Grayscale Image with Mask Applied", combined_mask)
+    # display_image("Depth Image", depth_img)
+    # keypoints_img = cv2.drawKeypoints(image, all_keypoints, None, flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+    # display_image("Keypoints in Valid Regions", keypoints_img)
 
     
 
@@ -171,7 +171,7 @@ def process_image_and_depth(image_path, depth_path, output_csv_path, total_keypo
     gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     # Extract keypoints and descriptors from patches
-    valid_keypoints, valid_descriptors = extract_sift_from_patches(gray_img, depth_img, total_keypoints, n_rows, n_cols)
+    valid_keypoints, valid_descriptors = extract_sift_from_patches(img, depth_img, total_keypoints, n_rows, n_cols)
 
     if len(valid_keypoints) < total_keypoints:
         print(f"Warning: Only {len(valid_keypoints)} valid keypoints found in {image_path}")
@@ -219,5 +219,5 @@ def process_training_data_file(txt_file, total_keypoints=200, n_rows=4, n_cols=4
     print(f"Saved updated text file with sparse depth paths to {output_txt_file}")
 
 # Example usage
-# txt_file = 'train_test_inputs/nyu_extract_test.txt'  # Replace with your text file path
-# process_training_data_file(txt_file, total_keypoints=200, n_rows=4, n_cols=4)  # Adjust total_keypoints, n_rows, and n_cols as needed
+txt_file = 'train_test_inputs/nyu_extract_test.txt'  # Replace with your text file path
+process_training_data_file(txt_file, total_keypoints=200, n_rows=4, n_cols=4)  # Adjust total_keypoints, n_rows, and n_cols as needed
