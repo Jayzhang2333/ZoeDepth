@@ -100,7 +100,7 @@ DATASETS_CONFIG = {
         "max_depth": 10,
         "data_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
         "gt_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
-        "filenames_file": "./train_test_inputs/nyudepthv2_train_files_with_gt.txt",
+        "filenames_file": "./train_test_inputs/nyu_extract_test_sparse_depth.txt",
         "input_height": 480,
         "input_width": 640,
         "data_path_eval": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/official_splits/test/"),
@@ -115,7 +115,9 @@ DATASETS_CONFIG = {
         "degree": 1.0,
         "do_kb_crop": False,
         "garg_crop": False,
-        "eigen_crop": True
+        "eigen_crop": True,
+        "do_input_resize": True
+
     },
     "ibims": {
         "dataset": "ibims",

@@ -80,64 +80,65 @@ def get_depth_prior_from_features(features, height=240, width=320):
     returns a dense depth prior parametrization using NumPy, displaying results
     using Matplotlib."""
     
-    batch_size = features.shape[0]
+    # batch_size = features.shape[0]
 
     # depth prior maps
-    prior_maps = np.empty((batch_size, height, width))
+    prior_maps = np.empty((height, width))
 
     # euclidean distance maps
-    distance_maps = np.empty((batch_size, height, width))
+    distance_maps = np.empty((height, width))
 
-    for i in range(batch_size):
-        # use only entries with valid depth
-        mask = features[i, :, 2] > 0.0
+    # for i in range(batch_size):
+    # use only entries with valid depth
+    mask = features[ :, 2] > 0.0
 
-        if not np.any(mask):
-            max_dist = np.sqrt(height ** 2 + width ** 2)
-            prior_maps[i, ...] = 0.0
-            distance_maps[i, ...] = max_dist
-            print(f"WARNING: Img {i+1} has no valid features, using placeholders.")
-            continue
+    if not np.any(mask):
+        max_dist = np.sqrt(height ** 2 + width ** 2)
+        prior_maps[ ...] = 0.0
+        distance_maps[ ...] = max_dist
+        print(f"WARNING: Img has no valid features, using placeholders.")
+        # continue
 
-        # get list of indices and depth values
-        idcs_height = np.round(features[i, mask, 0]).astype(int)
-        idcs_width = np.round(features[i, mask, 1]).astype(int)
-        depth_values = features[i, mask, 2]
+    # get list of indices and depth values
+    idcs_height = np.round(features[ mask, 0]).astype(int)
+    idcs_width = np.round(features[ mask, 1]).astype(int)
+    depth_values = features[ mask, 2]
 
-        # get distance maps for each feature
-        sample_dist_maps = get_distance_maps(height, width, idcs_height, idcs_width)
+    # get distance maps for each feature
+    sample_dist_maps = get_distance_maps(height, width, idcs_height, idcs_width)
 
-        # find min and argmin
-        dist_map_min = np.min(sample_dist_maps, axis=0)
-        dist_argmin = np.argmin(sample_dist_maps, axis=0)
+    # find min and argmin
+    dist_map_min = np.min(sample_dist_maps, axis=0)
+    dist_argmin = np.argmin(sample_dist_maps, axis=0)
 
-        # nearest neighbor prior map
-        prior_map = depth_values[dist_argmin]
+    # nearest neighbor prior map
+    prior_map = depth_values[dist_argmin]
 
-        # concat
-        prior_maps[i, ...] = prior_map
-        distance_maps[i, ...] = dist_map_min
+    # concat
+    prior_maps[...] = prior_map
+    distance_maps[...] = dist_map_min
 
-        # # Display results for each image
-        # plt.figure(figsize=(10, 5))
+    # # Display results for each image
+    # plt.figure(figsize=(10, 5))
 
-        # # Display depth prior map
-        # plt.subplot(1, 2, 1)
-        # plt.title(f"Depth Prior Map {i+1}")
-        # plt.imshow(prior_map, cmap='jet')
-        # plt.colorbar()
+    # # Display depth prior map
+    # plt.subplot(1, 2, 1)
+    # plt.title(f"Depth Prior Map {i+1}")
+    # plt.imshow(prior_map, cmap='jet')
+    # plt.colorbar()
 
-        # # Display probability map
-        # plt.subplot(1, 2, 2)
-        # probability_map = get_probability_maps(dist_map_min)
-        # plt.title(f"Probability Map {i+1}")
-        # plt.imshow(probability_map, cmap='jet')
-        # plt.colorbar()
+    # # Display probability map
+    # plt.subplot(1, 2, 2)
+    # probability_map = get_probability_maps(dist_map_min)
+    # plt.title(f"Probability Map {i+1}")
+    # plt.imshow(probability_map, cmap='jet')
+    # plt.colorbar()
 
-        # plt.show()
+    # plt.show()
 
     # parametrization (concatenating depth map and probability map for each image)
-    parametrization = np.stack([prior_maps, get_probability_maps(distance_maps)], axis=1)
+    parametrization = np.stack([prior_maps, get_probability_maps(distance_maps)], axis=2)
+    # print(parametrization.shape)
 
     return parametrization
 
@@ -225,6 +226,8 @@ class DepthDataLoader(object):
             "do_input_resize", False) else None
 
         if transform is None:
+            print("transform is none")
+            print(img_size)
             transform = preprocessing_transforms(mode, size=img_size)
 
         if mode == 'train':
@@ -362,11 +365,14 @@ class ImReader:
         return Image.open(fpath)
     
 def generate_sparse_feature_map(featrue_path):
+    # print(featrue_path)
     features = load_features_from_csv(featrue_path)
 
     # Reshape features into the required batch format (batch_size, num_features, 3)
     # Since we're working with one image, we expand the dimensions to simulate a batch of size 1
-    features = features[np.newaxis, :, :]
+    # i think the np.newaxis should be repalced with batch size
+    # features = features[np.newaxis, :, :]
+    # print(features.shape)
 
     # Process and visualize the depth prior
     parametrization = get_depth_prior_from_features(features, height=480, width=640)
@@ -386,7 +392,8 @@ class DataLoadPreprocess(Dataset):
 
         self.mode = mode
         self.transform = transform
-        self.to_tensor = ToTensor(mode)
+        # print(config.img_size)
+        # self.to_tensor = ToTensor(mode)
         self.is_for_online_eval = is_for_online_eval
         if config.use_shared_dict:
             self.reader = CachedReader(config.shared_dict)
@@ -559,6 +566,7 @@ class DataLoadPreprocess(Dataset):
             sample['mask'] = mask
 
         if self.transform:
+            # print("Go through transform")
             sample = self.transform(sample)
 
         sample = self.postprocess(sample)
@@ -659,9 +667,12 @@ class ToTensor(object):
         self.normalize = transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) if do_normalize else nn.Identity()
         self.size = size
+        # print(size)
         if size is not None:
+            print("size is not none")
             self.resize = transforms.Resize(size=size)
         else:
+            print("size is none")
             self.resize = nn.Identity()
 
     def __call__(self, sample):
@@ -670,8 +681,14 @@ class ToTensor(object):
         image = self.normalize(image)
         image = self.resize(image)
 
+        # print(f"image shape after to tensor: {image.shape}")
+
+        # print(f"sparse_feature_map type: {type(sparse_feature_map)}")
+        # print(sparse_feature_map.shape)
         sparse_feature_map = self.to_tensor(sparse_feature_map)
         sparse_feature_map = self.resize(sparse_feature_map)
+
+        # print(f"sparse_feature_map shape after to tensor: {sparse_feature_map.shape}")
 
         if self.mode == 'test':
             return {'image': image, 'sparse_map':sparse_feature_map,'focal': focal}
@@ -679,6 +696,7 @@ class ToTensor(object):
         depth = sample['depth']
         if self.mode == 'train':
             depth = self.to_tensor(depth)
+            # print(f"GT shape after to tensor: {depth.shape}")
             return {**sample, 'image': image, 'depth': depth, 'sparse_map':sparse_feature_map, 'focal': focal}
         else:
             has_valid_depth = sample['has_valid_depth']

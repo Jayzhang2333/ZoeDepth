@@ -83,6 +83,7 @@ def get_depth_prior_from_features(features, height=240, width=320):
 
     # parametrization (concatenating depth map and probability map for each image)
     parametrization = np.stack([prior_maps, get_probability_maps(distance_maps)], axis=1)
+    print(parametrization.shape)
 
     return parametrization
 

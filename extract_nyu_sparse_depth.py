@@ -31,7 +31,7 @@ def get_border_params(gray_image, tolerance=0.1, cut_off=20, value=255, level_di
     #     # If the image is already grayscale
     #     gray_image = rgb_image
     # gray_image = np.mean(rgb_image, axis=channel_axis)
-    print(gray_image.shape)
+    # print(gray_image.shape)
     h, w = gray_image.shape
 
     def num_value_pixels(arr):
@@ -71,8 +71,8 @@ def get_border_params(gray_image, tolerance=0.1, cut_off=20, value=255, level_di
     return CropParams(top, bottom, left, right)
 
 # Function to extract SIFT keypoints and descriptors from an image divided into patches
-def extract_sift_from_patches(image, depth_img, total_keypoints=200, n_rows=4, n_cols=4):
-    print(image.shape)
+def extract_sift_from_patches(image, depth_img, total_keypoints=1000, n_rows=4, n_cols=4):
+    # print(image.shape)
     height, width = image.shape[:2]
 
     # Get border parameters to define the region of interest (ROI)
@@ -152,7 +152,7 @@ def extract_sift_from_patches(image, depth_img, total_keypoints=200, n_rows=4, n
         if 0 <= row < depth_img.shape[0] and 0 <= col < depth_img.shape[1]:
             depth_value = depth_img[row, col]
             if depth_value > 0 and combined_mask[row, col]:  # Ensure keypoint is in the valid region
-                valid_keypoints.append([row, col, depth_value])
+                valid_keypoints.append([row, col, depth_value/1000])
                 if all_descriptors is not None:
                     valid_descriptors.append(all_descriptors[idx])
 
@@ -173,7 +173,7 @@ def process_image_and_depth(image_path, depth_path, output_csv_path, total_keypo
     gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     # Extract keypoints and descriptors from patches
-    valid_keypoints, valid_descriptors = extract_sift_from_patches(img, depth_img, total_keypoints, n_rows, n_cols)
+    valid_keypoints, valid_descriptors = extract_sift_from_patches(gray_img, depth_img, total_keypoints, n_rows, n_cols)
 
     if len(valid_keypoints) < total_keypoints:
         print(f"Warning: Only {len(valid_keypoints)} valid keypoints found in {image_path}")
@@ -221,5 +221,5 @@ def process_training_data_file(txt_file, total_keypoints=200, n_rows=4, n_cols=4
     print(f"Saved updated text file with sparse depth paths to {output_txt_file}")
 
 # Example usage
-# txt_file = 'train_test_inputs/nyu_extract_test.txt'  # Replace with your text file path
-# process_training_data_file(txt_file, total_keypoints=200, n_rows=4, n_cols=4)  # Adjust total_keypoints, n_rows, and n_cols as needed
+txt_file = 'train_test_inputs/nyu_extract_test.txt'  # Replace with your text file path
+process_training_data_file(txt_file, total_keypoints=200, n_rows=4, n_cols=4)  # Adjust total_keypoints, n_rows, and n_cols as needed
