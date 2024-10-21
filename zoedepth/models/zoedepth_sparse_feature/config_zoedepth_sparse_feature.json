@@ -21,7 +21,7 @@
     },
     
     "train": {
-        "train_midas": true,
+        "train_midas": false,
         "use_pretrained_midas": true,
         "trainer": "ZoeDepth_sparse_feature",
         "epochs": 5,
@@ -29,7 +29,7 @@
         "optim_kwargs": {"lr": 0.000161, "wd": 0.01},
         "sched_kwargs": {"div_factor": 1, "final_div_factor": 10000, "pct_start": 0.7, "three_phase":false, "cycle_momentum": true},
         "same_lr": false,
-        "w_rmse":1,
+        "w_rmse":10,
         "w_si": 0,
         "w_domain": 0.2,
         "w_reg": 0,
