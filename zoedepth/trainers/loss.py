@@ -37,6 +37,41 @@ def extract_key(prediction, key):
         return prediction[key]
     return prediction
 
+class RMSELoss(nn.Module):
+    """Root Mean Squared Error (RMSE)"""
+
+    def __init__(self) -> None:
+        super(RMSELoss, self).__init__()
+
+        self.name = "RMSELoss"
+
+        self.mse_loss = nn.MSELoss()
+
+    def forward(self, input, target, mask=None, interpolate=True):
+
+        input = extract_key(input, KEY_OUTPUT)
+        if input.shape[-1] != target.shape[-1] and interpolate:
+            input = nn.functional.interpolate(
+                input, target.shape[-2:], mode='bilinear', align_corners=True)
+            intr_input = input
+        else:
+            intr_input = input
+
+        if target.ndim == 3:
+            target = target.unsqueeze(1)
+
+        if mask is not None:
+            if mask.ndim == 3:
+                mask = mask.unsqueeze(1)
+
+            input = input[mask]
+            target = target[mask]
+
+        with amp.autocast(enabled=False):
+            loss = torch.sqrt(self.mse_loss(input, target))
+
+        return loss
+
 
 # Main loss function used for ZoeDepth. Copy/paste from AdaBins repo (https://github.com/shariqfarooq123/AdaBins/blob/0952d91e9e762be310bb4cd055cbfe2448c0ce20/loss.py#L7)
 class SILogLoss(nn.Module):
@@ -81,6 +116,7 @@ class SILogLoss(nn.Module):
             print("Nan SILog loss")
             print("input:", input.shape)
             print("target:", target.shape)
+            print(mask)
             print("G", torch.sum(torch.isnan(g)))
             print("Input min max", torch.min(input), torch.max(input))
             print("Target min max", torch.min(target), torch.max(target))

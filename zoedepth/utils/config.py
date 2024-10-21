@@ -100,7 +100,7 @@ DATASETS_CONFIG = {
         "max_depth": 10,
         "data_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
         "gt_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
-        "filenames_file": "./train_test_inputs/nyu_extract_test_sparse_depth.txt",
+        "filenames_file": "./train_test_inputs/nyudepthv2_train_files_with_gt.txt",
         "input_height": 480,
         "input_width": 640,
         "data_path_eval": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/official_splits/test/"),
@@ -117,6 +117,32 @@ DATASETS_CONFIG = {
         "garg_crop": False,
         "eigen_crop": True,
         "do_input_resize": True
+
+    },
+    "nyu_sparse_feature": {
+        "dataset": "nyu_sparse_feature",
+        "avoid_boundary": False,
+        "min_depth": 1e-3,   # originally 0.1
+        "max_depth": 10,
+        "data_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
+        "gt_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
+        "filenames_file": "./train_test_inputs/removed_bathroom_nyu_extract_train_sparse_depth.txt",
+        "input_height": 480,
+        "input_width": 640,
+        "data_path_eval": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/test/test/"),
+        "gt_path_eval": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/test/test/"),
+        "filenames_file_eval": "./train_test_inputs/removed_bathroom_nyu_extract_test_sparse_depth.txt",
+        "min_depth_eval": 1e-3,
+        "max_depth_eval": 10,
+        "min_depth_diff": -10,
+        "max_depth_diff": 10,
+
+        "do_random_rotate": True,
+        "degree": 1.0,
+        "do_kb_crop": False,
+        "garg_crop": False,
+        "eigen_crop": True,
+        "do_input_resize": False
 
     },
     "ibims": {
@@ -374,10 +400,10 @@ def get_config(model_name, mode='train', dataset=None, **overwrite_kwargs):
     """
 
 
-    check_choices("Model", model_name, ["zoedepth", "zoedepth_nk"])
+    check_choices("Model", model_name, ["zoedepth", "zoedepth_nk", 'zoedepth_sparse_feature'])
     check_choices("Mode", mode, ["train", "infer", "eval"])
     if mode == "train":
-        check_choices("Dataset", dataset, ["nyu", "kitti", "mix", None])
+        check_choices("Dataset", dataset, ["nyu", "kitti", "mix", "nyu_sparse_feature", None])
 
     config = flatten({**COMMON_CONFIG, **COMMON_TRAINING_CONFIG})
     config = update_model_config(config, mode, model_name)
@@ -395,6 +421,7 @@ def get_config(model_name, mode='train', dataset=None, **overwrite_kwargs):
     # update with overwrite_kwargs
     # Combined args are useful for hyperparameter search
     overwrite_kwargs = split_combined_args(overwrite_kwargs)
+    # the overwrite_kwargs are added to the config here
     config = {**config, **overwrite_kwargs}
 
     # Casting to bool   # TODO: Not necessary. Remove and test

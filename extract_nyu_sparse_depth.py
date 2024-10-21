@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import matplotlib.pyplot as plt
 
 # Define the base directory to prepend to all paths (but not for output text)
-base_path = '/home/jay/shortcuts/datasets/nyu_depth_v2/sync'
+base_path = '/home/jay/shortcuts/datasets/nyu_depth_v2/test/test'
 
 # Function to display the image
 def display_image(title, img):
@@ -91,7 +91,8 @@ def extract_sift_from_patches(image, depth_img, total_keypoints=1000, n_rows=4, 
     patch_width = width // n_cols
 
     # Calculate the number of keypoints per patch
-    keypoints_per_patch = total_keypoints // (n_rows * n_cols)
+    # keypoints_per_patch_more = (total_keypoints +200) // (n_rows * n_cols)
+    keypoints_per_patch = (total_keypoints + 300) // (n_rows * n_cols)
 
     sift = cv2.SIFT_create(nfeatures=keypoints_per_patch, contrastThreshold=0.0)
     all_keypoints = []
@@ -116,14 +117,40 @@ def extract_sift_from_patches(image, depth_img, total_keypoints=1000, n_rows=4, 
             for kp in patch_keypoints:
                 kp.pt = (kp.pt[0] + x_start, kp.pt[1] + y_start)  # Adjust keypoint location to original image
 
-            # Sort by response (strength) and take the strongest keypoints_per_patch
-            patch_keypoints = sorted(patch_keypoints, key=lambda x: x.response, reverse=True)[:keypoints_per_patch]
+            # Create a dictionary to store the strongest keypoint for each pixel
+            strongest_keypoints = {}
+            strongest_descriptors = {}
 
-            # Collect the keypoints and descriptors from this patch
-            if patch_keypoints:
-                all_keypoints.extend(patch_keypoints)
-                if patch_descriptors is not None:
-                    all_descriptors.append(patch_descriptors[:keypoints_per_patch])
+            for idx, kp in enumerate(patch_keypoints):
+                col, row = int(kp.pt[0]), int(kp.pt[1])  # Convert keypoint location to pixel coordinates
+                
+                # If this pixel hasn't been added yet or the new keypoint has a stronger response, update it
+                if (row, col) not in strongest_keypoints or kp.response > strongest_keypoints[(row, col)].response:
+                    strongest_keypoints[(row, col)] = kp
+                    if patch_descriptors is not None:
+                        strongest_descriptors[(row, col)] = patch_descriptors[idx]
+
+            # Extract the remaining keypoints and descriptors after filtering
+            filtered_keypoints = list(strongest_keypoints.values())
+            filtered_descriptors = list(strongest_descriptors.values())
+
+            # Sort by response (strength) and take the strongest keypoints_per_patch
+            filtered_keypoints = sorted(filtered_keypoints, key=lambda x: x.response, reverse=True)[:keypoints_per_patch]
+            filtered_descriptors = filtered_descriptors[:keypoints_per_patch]  # Keep only top descriptors
+
+            # Collect the filtered keypoints and descriptors from this patch
+            if filtered_keypoints:
+                all_keypoints.extend(filtered_keypoints)
+                if filtered_descriptors:
+                    all_descriptors.append(np.array(filtered_descriptors))
+            # # Sort by response (strength) and take the strongest keypoints_per_patch
+            # patch_keypoints = sorted(patch_keypoints, key=lambda x: x.response, reverse=True)[:keypoints_per_patch]
+
+            # # Collect the keypoints and descriptors from this patch
+            # if patch_keypoints:
+            #     all_keypoints.extend(patch_keypoints)
+            #     if patch_descriptors is not None:
+            #         all_descriptors.append(patch_descriptors[:keypoints_per_patch])
 
     # Display results
     # display_image("Original Image", image)
@@ -222,4 +249,4 @@ def process_training_data_file(txt_file, total_keypoints=200, n_rows=4, n_cols=4
 
 # Example usage
 txt_file = 'train_test_inputs/nyu_extract_test.txt'  # Replace with your text file path
-process_training_data_file(txt_file, total_keypoints=200, n_rows=4, n_cols=4)  # Adjust total_keypoints, n_rows, and n_cols as needed
+process_training_data_file(txt_file, total_keypoints=700, n_rows=4, n_cols=4)  # Adjust total_keypoints, n_rows, and n_cols as needed

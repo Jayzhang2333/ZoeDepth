@@ -26,7 +26,7 @@ import torch
 import torch.cuda.amp as amp
 import torch.nn as nn
 
-from zoedepth.trainers.loss import GradL1Loss, SILogLoss
+from zoedepth.trainers.loss import GradL1Loss, SILogLoss, RMSELoss
 from zoedepth.utils.config import DATASETS_CONFIG
 from zoedepth.utils.misc import compute_metrics
 from zoedepth.data.preprocess import get_black_border
@@ -43,6 +43,7 @@ class Trainer(BaseTrainer):
         self.device = device
         self.silog_loss = SILogLoss()
         self.grad_loss = GradL1Loss()
+        self.rmse_loss = RMSELoss()
         self.scaler = amp.GradScaler(enabled=self.config.use_amp)
 
     def train_on_batch(self, batch, train_step):
@@ -52,8 +53,10 @@ class Trainer(BaseTrainer):
         batch["depth"].shape : batch_size, 1, h, w
         """
 
-        images, depths_gt = batch['image'].to(
+        images, depths_gt,  = batch['image'].to(
             self.device), batch['depth'].to(self.device)
+        if self.config.prior_channels > 0:
+            sparse_features = batch['sparse_map'].to(self.device).float() 
         dataset = batch['dataset'][0]
 
         b, c, h, w = images.size()
@@ -63,13 +66,22 @@ class Trainer(BaseTrainer):
 
         with amp.autocast(enabled=self.config.use_amp):
 
-            output = self.model(images)
+            if self.config.prior_channels > 0:
+                output = self.model(images, sparse_feature = sparse_features)
+            else:
+                output = self.model(images)
             pred_depths = output['metric_depth']
 
             l_si, pred = self.silog_loss(
                 pred_depths, depths_gt, mask=mask, interpolate=True, return_interpolated=True)
-            loss = self.config.w_si * l_si
+            
+            l_rmse= self.rmse_loss(
+                pred_depths, depths_gt, mask=mask, interpolate=True)
+
+            loss = self.config.w_si * l_si + self.config.w_rmse * l_rmse
+            
             losses[self.silog_loss.name] = l_si
+            losses[self.rmse_loss.name] = l_rmse
 
             if self.config.w_grad > 0:
                 l_grad = self.grad_loss(pred, depths_gt, mask=mask)
@@ -106,22 +118,23 @@ class Trainer(BaseTrainer):
         return losses
     
     @torch.no_grad()
-    def eval_infer(self, x):
+    def eval_infer(self, x, sparse_feature = None):
         with amp.autocast(enabled=self.config.use_amp):
             m = self.model.module if self.config.multigpu else self.model
-            pred_depths = m(x)['metric_depth']
+            pred_depths = m(x, sparse_feature = sparse_feature)['metric_depth']
         return pred_depths
 
     @torch.no_grad()
-    def crop_aware_infer(self, x):
+    def crop_aware_infer(self, x, sparse_feature = None):
         # if we are not avoiding the black border, we can just use the normal inference
         if not self.config.get("avoid_boundary", False):
-            return self.eval_infer(x)
+            return self.eval_infer(x, sparse_feature)
         
         # otherwise, we need to crop the image to avoid the black border
         # For now, this may be a bit slow due to converting to numpy and back
         # We assume no normalization is done on the input image
 
+        # THIS IS NOT MODIFIED FOR SPARSE FEATURE YET!!!!!!
         # get the black border
         assert x.shape[0] == 1, "Only batch size 1 is supported for now"
         x_pil = transforms.ToPILImage()(x[0].cpu())
@@ -149,6 +162,8 @@ class Trainer(BaseTrainer):
 
     def validate_on_batch(self, batch, val_step):
         images = batch['image'].to(self.device)
+        if self.config.prior_channels > 0:
+            sparse_feature = batch['sparse_map'].to(self.device).float() 
         depths_gt = batch['depth'].to(self.device)
         dataset = batch['dataset'][0]
         mask = batch["mask"].to(self.device)
@@ -158,18 +173,28 @@ class Trainer(BaseTrainer):
 
         depths_gt = depths_gt.squeeze().unsqueeze(0).unsqueeze(0)
         mask = mask.squeeze().unsqueeze(0).unsqueeze(0)
-        if dataset == 'nyu':
-            pred_depths = self.crop_aware_infer(images)
+        if dataset == 'nyu' or dataset == 'nyu_sparse_feature':
+            if self.config.prior_channels > 0:
+                pred_depths = self.crop_aware_infer(images, sparse_feature = sparse_feature)
+            else:
+                pred_depths = self.crop_aware_infer(images)
         else:
-            pred_depths = self.eval_infer(images)
+            if self.config.prior_channels > 0:
+                pred_depths = self.eval_infer(images, sparse_feature = sparse_feature)
+            else:
+                pred_depths = self.eval_infer(images)
         pred_depths = pred_depths.squeeze().unsqueeze(0).unsqueeze(0)
 
         with amp.autocast(enabled=self.config.use_amp):
             l_depth = self.silog_loss(
                 pred_depths, depths_gt, mask=mask.to(torch.bool), interpolate=True)
+            
+            l_rmse = self.rmse_loss(
+                pred_depths, depths_gt, mask=mask.to(torch.bool), interpolate=True)
 
         metrics = compute_metrics(depths_gt, pred_depths, **self.config)
         losses = {f"{self.silog_loss.name}": l_depth.item()}
+        losses[self.rmse_loss.name] = l_rmse
 
         if val_step == 1 and self.should_log:
             depths_gt[torch.logical_not(mask)] = -99

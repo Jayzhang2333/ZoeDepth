@@ -1,6 +1,6 @@
 {
     "model": {
-        "name": "ZoeDepth",
+        "name": "ZoeDepth_sparse_feature",
         "version_name": "v1",
         "n_bins": 64,
         "bin_embedding_dim": 128,
@@ -10,25 +10,27 @@
         "attractor_gamma": 2,
         "attractor_kind" : "mean",
         "attractor_type" : "inv",
+        "prior_channels" : 2,
         "midas_model_type" : "DPT_BEiT_L_384",
         "min_temp": 0.0212,
         "max_temp": 50.0,
         "output_distribution": "logbinomial",
         "memory_efficient": true,
         "inverse_midas": false,
-        "img_size": [384, 512]
+        "img_size": [240, 320]
     },
     
     "train": {
         "train_midas": true,
         "use_pretrained_midas": true,
-        "trainer": "zoedepth",
+        "trainer": "ZoeDepth_sparse_feature",
         "epochs": 5,
-        "bs": 1,
+        "bs": 4,
         "optim_kwargs": {"lr": 0.000161, "wd": 0.01},
         "sched_kwargs": {"div_factor": 1, "final_div_factor": 10000, "pct_start": 0.7, "three_phase":false, "cycle_momentum": true},
         "same_lr": false,
-        "w_si": 1,
+        "w_rmse":1,
+        "w_si": 0,
         "w_domain": 0.2,
         "w_reg": 0,
         "w_grad": 0,
@@ -46,13 +48,13 @@
     "infer":{
         "train_midas": false,
         "use_pretrained_midas": false,
-        "pretrained_resource" : "url::https://github.com/isl-org/ZoeDepth/releases/download/v1.0/ZoeD_M12_N.pt",
+        "pretrained_resource" : "",
         "force_keep_ar": true
     },
 
     "eval":{
         "train_midas": false,
         "use_pretrained_midas": false,
-        "pretrained_resource" : "url::https://github.com/isl-org/ZoeDepth/releases/download/v1.0/ZoeD_M12_N.pt"
+        "pretrained_resource" : ""
     }
 }

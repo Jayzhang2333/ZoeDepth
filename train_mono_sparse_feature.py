@@ -35,9 +35,9 @@ import numpy as np
 from pprint import pprint
 import argparse
 import os
-import matplotlib.pyplot as plt
 
-
+os.environ["PYOPENGL_PLATFORM"] = "egl"
+os.environ["WANDB_START_METHOD"] = "thread"
 
 
 def fix_random_seed(seed: int):
@@ -56,77 +56,75 @@ def fix_random_seed(seed: int):
     torch.backends.cudnn.benchmark = True
 
 
+def load_ckpt(config, model, checkpoint_dir="./checkpoints", ckpt_type="best"):
+    import glob
+    import os
+
+    from zoedepth.models.model_io import load_wts
+
+    if hasattr(config, "checkpoint"):
+        checkpoint = config.checkpoint
+    elif hasattr(config, "ckpt_pattern"):
+        pattern = config.ckpt_pattern
+        matches = glob.glob(os.path.join(
+            checkpoint_dir, f"*{pattern}*{ckpt_type}*"))
+        if not (len(matches) > 0):
+            raise ValueError(f"No matches found for the pattern {pattern}")
+
+        checkpoint = matches[0]
+
+    else:
+        return model
+    model = load_wts(model, checkpoint)
+    print("Loaded weights from {0}".format(checkpoint))
+    return model
 
 
-def main_worker(gpu, config):
+def main_worker(gpu, ngpus_per_node, config):
+    try:
+        seed = config.seed if 'seed' in config and config.seed else 43
+        fix_random_seed(seed)
 
-    seed = config.seed if 'seed' in config and config.seed else 43
-    fix_random_seed(seed)
+        config.gpu = gpu
 
-    config.gpu = gpu
-
-    
-    # .data returns the actual datalodar
-    train_loader = DepthDataLoader(config, "train").data
-
-    for i, batch in enumerate(train_loader):
-        if i == 0:
-            # Get the first sample from the batch
-            rgb_image = batch['image'][0].permute(1, 2, 0).cpu().numpy()  # Convert to HWC for visualization
-            depth_map = batch['depth'][0].squeeze().cpu().numpy()  # Squeeze to remove (1, H, W) -> (H, W)
-            feature_map = batch['sparse_map'][0].cpu().numpy()  # Feature map (2 channels)
-
-            # Print shapes
-            print(f"RGB Image shape: {rgb_image.shape}")          # Should be (H, W, 3)
-            print(f"Depth Map shape: {depth_map.shape}")          # Should be (H, W)
-            print(f"Feature Map shape: {feature_map.shape}")      # Should be (2, H, W)
-
-            # Visualize the data
-            fig, axs = plt.subplots(1, 4, figsize=(20, 5))  # Adjust figsize to control overall size
-            
-            # RGB Image
-            axs[0].imshow(rgb_image)
-            axs[0].set_title('RGB Image')
-            axs[0].axis('off')
-            axs[0].set_aspect('equal')  # Or 'equal' to preserve natural aspect ratio
-
-            # Depth Map
-            im = axs[1].imshow(depth_map, cmap='plasma')
-            axs[1].set_title('Depth Map')
-            axs[1].axis('off')
-            axs[1].set_aspect('equal')  # Or 'equal'
-            fig.colorbar(im, ax=axs[1])
-
-            # Feature Map Channel 1
-            im = axs[2].imshow(feature_map[0], cmap='plasma')
-            axs[2].set_title('Feature Map - Channel 1')
-            axs[2].axis('off')
-            axs[2].set_aspect('equal')  # Or 'equal'
-            fig.colorbar(im, ax=axs[2])
-
-            # Feature Map Channel 2
-            im = axs[3].imshow(feature_map[1], cmap='plasma')
-            axs[3].set_title('Feature Map - Channel 2')
-            axs[3].axis('off')
-            axs[3].set_aspect('equal')  # Or 'equal'
-            fig.colorbar(im, ax=axs[3])
-
-            plt.show()
-            break
+        model = build_model(config)
         
+        model = load_ckpt(config, model)
+        model = parallelize(config, model)
+
+        total_params = f"{round(count_parameters(model)/1e6,2)}M"
+        config.total_params = total_params
+        print(f"Total parameters : {total_params}")
+
+        # .data returns the actual datalodar
+        train_loader = DepthDataLoader(config, "train").data
+
+        # evaluation data not ready as the path are combined path
+        test_loader = DepthDataLoader(config, "online_eval").data
+
+        trainer = get_trainer(config)(
+            config, model, train_loader, test_loader = test_loader, device=config.gpu)
+
+        trainer.train()
+    finally:
+        import wandb
+        wandb.finish()
 
 
 if __name__ == '__main__':
     mp.set_start_method('forkserver')
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--model", type=str, default="zoedepth_sparse_feature")
-    parser.add_argument("-d", "--dataset", type=str, default='nyu_sparse_feature')
+    parser.add_argument("-m", "--model", type=str, default="synunet")
+    parser.add_argument("-d", "--dataset", type=str, default='nyu')
     parser.add_argument("--trainer", type=str, default=None)
 
+    # returns the known and unknown arguments
     args, unknown_args = parser.parse_known_args()
+    # takes unknown arguments and return as key value pairs
     overwrite_kwargs = parse_unknown(unknown_args)
 
+    # add known argument to the dictionary 
     overwrite_kwargs["model"] = args.model
     if args.trainer is not None:
         overwrite_kwargs["trainer"] = args.trainer
@@ -180,4 +178,4 @@ if __name__ == '__main__':
     else:
         if ngpus_per_node == 1:
             config.gpu = 0
-        main_worker(config.gpu, config)
+        main_worker(config.gpu, ngpus_per_node, config)
