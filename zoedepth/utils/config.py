@@ -129,6 +129,8 @@ DATASETS_CONFIG = {
         "filenames_file": "./train_test_inputs/removed_bathroom_nyu_extract_train_sparse_depth.txt",
         "input_height": 480,
         "input_width": 640,
+        "sparse_feature_height": 480,
+        "sparse_feature_width":680,
         "data_path_eval": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/test/test/"),
         "gt_path_eval": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/test/test/"),
         "filenames_file_eval": "./train_test_inputs/removed_bathroom_nyu_extract_test_sparse_depth.txt",
@@ -137,6 +139,32 @@ DATASETS_CONFIG = {
         "min_depth_diff": -10,
         "max_depth_diff": 10,
 
+        "do_random_rotate": True,
+        "degree": 1.0,
+        "do_kb_crop": False,
+        "garg_crop": False,
+        "eigen_crop": True,
+        "do_input_resize": False
+
+    },
+    "flsea_sparse_feature": {
+        "dataset": "flsea_sparse_feature",
+        "avoid_boundary": False,
+        "min_depth": 1e-3,   # flsea dataset, canyons is from 4-7m, red sea is from 3-8m
+        "max_depth": 8,
+        "data_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
+        "gt_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
+        "filenames_file": "./train_test_inputs/removed_bathroom_nyu_extract_train_sparse_depth.txt",
+        "input_height": 608,
+        "input_width": 968,
+
+        "data_path_eval": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/test/test/"),
+        "gt_path_eval": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/test/test/"),
+        "filenames_file_eval": "./train_test_inputs/removed_bathroom_nyu_extract_test_sparse_depth.txt",
+        "min_depth_eval": 1e-3,
+        "max_depth_eval": 8,
+        "sparse_feature_height": 240,
+        "sparse_feature_width":320,
         "do_random_rotate": True,
         "degree": 1.0,
         "do_kb_crop": False,

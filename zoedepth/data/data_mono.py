@@ -367,7 +367,7 @@ class ImReader:
     def open(self, fpath):
         return Image.open(fpath)
     
-def generate_sparse_feature_map(featrue_path, prior_channels):
+def generate_sparse_feature_map(featrue_path, prior_channels, height, width):
     # print(featrue_path)
     features = load_features_from_csv(featrue_path)
 
@@ -378,8 +378,8 @@ def generate_sparse_feature_map(featrue_path, prior_channels):
     # print(features.shape)
 
     # Process and visualize the depth prior
-    
-    parametrization = get_depth_prior_from_features(features,prior_channels, height=480, width=640)
+    parametrization = get_depth_prior_from_features(features,prior_channels, height=height, width=width)
+    # parametrization = get_depth_prior_from_features(features,prior_channels, height=480, width=640)
 
     return parametrization
 
@@ -429,7 +429,7 @@ class DataLoadPreprocess(Dataset):
 
             image = self.reader.open(image_path)
             # sparse feature map is numpy array
-            sparse_feature_map = generate_sparse_feature_map(featrue_path, self.config.prior_channels)
+            sparse_feature_map = generate_sparse_feature_map(featrue_path, self.config.prior_channels, self.config.sparse_feature_height, self.config.sparse_feature_width)
             depth_gt = self.reader.open(depth_path)
             w, h = image.size
 
@@ -516,7 +516,7 @@ class DataLoadPreprocess(Dataset):
             image = np.asarray(self.reader.open(image_path),
                                dtype=np.float32) / 255.0
 
-            sparse_feature_map = generate_sparse_feature_map(feature_path, self.config.prior_channels)
+            sparse_feature_map = generate_sparse_feature_map(feature_path, self.config.prior_channels, self.config.sparse_feature_height, self.config.sparse_feature_width)
 
             if self.mode == 'online_eval':
                 gt_path = self.config.gt_path_eval
@@ -533,7 +533,7 @@ class DataLoadPreprocess(Dataset):
                 if has_valid_depth:
                     depth_gt = np.asarray(depth_gt, dtype=np.float32)
                     depth_gt = np.expand_dims(depth_gt, axis=2)
-                    if self.config.dataset == 'nyu' or self.config.dataset == 'nyu_sparse_feature':
+                    if self.config.dataset == 'nyu' or self.config.dataset == 'nyu_sparse_feature'or self.config.dataset == 'flsea_sparse_feature':
                         depth_gt = depth_gt / 1000.0
                     else:
                         depth_gt = depth_gt / 256.0
