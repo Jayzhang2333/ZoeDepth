@@ -150,8 +150,8 @@ DATASETS_CONFIG = {
     "flsea_sparse_feature": {
         "dataset": "flsea_sparse_feature",
         "avoid_boundary": False,
-        "min_depth": 1,   # flsea dataset, canyons is from 4-7m, red sea is from 3-8m
-        "max_depth": 5,
+        "min_depth": 0.05,   # flsea dataset, canyons is from 4-7m, red sea is from 3-8m
+        "max_depth": 8,
         #"data_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
         #"gt_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
         #"filenames_file": "./train_test_inputs/removed_bathroom_nyu_extract_train_sparse_depth.txt",
@@ -161,8 +161,8 @@ DATASETS_CONFIG = {
         "data_path_eval": "/",
         "gt_path_eval": "/",
         "filenames_file_eval": "./train_test_inputs/flsea_test_with_features.txt",
-        "min_depth_eval": 1,
-        "max_depth_eval": 5,
+        "min_depth_eval": 0.05,
+        "max_depth_eval": 8,
         "sparse_feature_height": 240,
         "sparse_feature_width":320,
         "do_random_rotate": True,

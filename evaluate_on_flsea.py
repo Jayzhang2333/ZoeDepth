@@ -55,14 +55,17 @@ def infer(model, images, sparse_features, **kwargs):
 
     pred1 = model(images,sparse_feature=sparse_features, **kwargs)
     pred1 = get_depth_from_prediction(pred1)
+    # return pred1
 
-    # pred2 = model(torch.flip(images, [3]), sparse_feature=torch.flip(sparse_features, [3]), **kwargs)
-    # pred2 = get_depth_from_prediction(pred2)
-    # pred2 = torch.flip(pred2, [3])
+    pred2 = model(torch.flip(images, [3]), sparse_feature=torch.flip(sparse_features, [3]), **kwargs)
+    pred2 = get_depth_from_prediction(pred2)
+    pred2 = torch.flip(pred2, [3])
 
-    # mean_pred = 0.5 * (pred1 + pred2)
+    mean_pred = 0.5 * (pred1 + pred2)
 
-    return pred1
+    return mean_pred
+
+    
 
 
 @torch.no_grad()
