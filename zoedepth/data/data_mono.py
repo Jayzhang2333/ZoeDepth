@@ -148,7 +148,9 @@ def get_depth_prior_from_features(features, prior_channels, height=240, width=32
 def load_features_from_csv(csv_file):
     """Loads features from a CSV file into a NumPy array."""
     df = pd.read_csv(csv_file)
-    features = df[['row', 'col', 'depth']].to_numpy()
+    col_name = 'col' if 'col' in df.columns else 'column'
+
+    features = df[['row', col_name, 'depth']].to_numpy()
     return features
 
 
@@ -410,7 +412,10 @@ class DataLoadPreprocess(Dataset):
     def __getitem__(self, idx):
         sample_path = self.filenames[idx]
         # print(sample_path)
-        focal = float(sample_path.split()[2])
+        if len(sample_path.split()) > 3:
+            focal = float(sample_path.split()[2])
+        else:
+            focal = 500 #give a dummy value
         sample = {}
 
         if self.mode == 'train':
@@ -513,6 +518,8 @@ class DataLoadPreprocess(Dataset):
             
             feature_path = os.path.join(
                 data_path, remove_leading_slash(sample_path.split()[-1]))
+            
+            # print(sample_path.split()[0])
             image = np.asarray(self.reader.open(image_path),
                                dtype=np.float32) / 255.0
 
@@ -533,8 +540,12 @@ class DataLoadPreprocess(Dataset):
                 if has_valid_depth:
                     depth_gt = np.asarray(depth_gt, dtype=np.float32)
                     depth_gt = np.expand_dims(depth_gt, axis=2)
-                    if self.config.dataset == 'nyu' or self.config.dataset == 'nyu_sparse_feature'or self.config.dataset == 'flsea_sparse_feature':
+                    
+                    if self.config.dataset == 'nyu' or self.config.dataset == 'nyu_sparse_feature':
                         depth_gt = depth_gt / 1000.0
+                    elif self.config.dataset == "flsea_sparse_feature":
+                        depth_gt = depth_gt / 1.0
+
                     else:
                         depth_gt = depth_gt / 256.0
 

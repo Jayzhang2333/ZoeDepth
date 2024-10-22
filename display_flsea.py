@@ -3,10 +3,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Assuming the depth map is stored in a file called 'depth_map.tif'
-depth_map_tif = Image.open('/media/jay/apple/FLSea_latest/archive/canyons/flatiron/flatiron/depth/16233051861828957_SeaErra_abs_depth.tif')
+depth_map_tif = Image.open('/home/jay/shortcuts/datasets/nyu_depth_v2/sync/basement_0001a/sync_depth_00000.png')
 
 # Convert the image to a NumPy array
 depth_map_array = np.array(depth_map_tif)
+
+# depth_map = np.load('depth_map.npy')
 
 # Display the depth map using matplotlib with the 'plasma' colormap
 plt.imshow(depth_map_array, cmap='plasma')

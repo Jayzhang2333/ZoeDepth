@@ -38,7 +38,7 @@ from zoedepth.utils.misc import (RunningAverageDict, colors, compute_metrics,
 
 
 @torch.no_grad()
-def infer(model, images, **kwargs):
+def infer(model, images, sparse_features, **kwargs):
     # this inference has flip augmentation
     """Inference with flip augmentation"""
     # images.shape = N, C, H, W
@@ -53,16 +53,16 @@ def infer(model, images, **kwargs):
             raise NotImplementedError(f"Unknown output type {type(pred)}")
         return pred
 
-    pred1 = model(images, **kwargs)
+    pred1 = model(images,sparse_feature=sparse_features, **kwargs)
     pred1 = get_depth_from_prediction(pred1)
 
-    pred2 = model(torch.flip(images, [3]), **kwargs)
-    pred2 = get_depth_from_prediction(pred2)
-    pred2 = torch.flip(pred2, [3])
+    # pred2 = model(torch.flip(images, [3]), sparse_feature=torch.flip(sparse_features, [3]), **kwargs)
+    # pred2 = get_depth_from_prediction(pred2)
+    # pred2 = torch.flip(pred2, [3])
 
-    mean_pred = 0.5 * (pred1 + pred2)
+    # mean_pred = 0.5 * (pred1 + pred2)
 
-    return mean_pred
+    return pred1
 
 
 @torch.no_grad()
@@ -75,10 +75,11 @@ def evaluate(model, test_loader, config, round_vals=True, round_precision=3):
                 continue
         image, depth = sample['image'], sample['depth']
         image, depth = image.cuda(), depth.cuda()
+        sparse_features = sample['sparse_map'].cuda().float() 
         depth = depth.squeeze().unsqueeze(0).unsqueeze(0)
         focal = sample.get('focal', torch.Tensor(
             [715.0873]).cuda())  # This magic number (focal length) is only used for evaluating BTS model
-        pred = infer(model, image, dataset=sample['dataset'][0], focal=focal)
+        pred = infer(model, image, sparse_features, dataset=sample['dataset'][0], focal=focal)
 
         # Save image, depth, pred for visualization
         if "save_images" in config and config.save_images:
