@@ -145,13 +145,31 @@ def get_depth_prior_from_features(features, prior_channels, height=240, width=32
 
         return parametrization
 
+# def load_features_from_csv(csv_file):
+#     """Loads features from a CSV file into a NumPy array."""
+#     df = pd.read_csv(csv_file)
+#     col_name = 'col' if 'col' in df.columns else 'column'
+
+#     features = df[['row', col_name, 'depth']].to_numpy()
+#     return features
+import csv
 def load_features_from_csv(csv_file):
     """Loads features from a CSV file into a NumPy array."""
-    df = pd.read_csv(csv_file)
-    col_name = 'col' if 'col' in df.columns else 'column'
+    features = []
 
-    features = df[['row', col_name, 'depth']].to_numpy()
-    return features
+    with open(csv_file, mode='r') as file:
+        csv_reader = csv.DictReader(file)
+        col_name = 'col' if 'col' in csv_reader.fieldnames else 'column'
+
+        # Extract the relevant columns ('row', col_name, 'depth')
+        for row in csv_reader:
+            features.append([float(row['row']), float(row[col_name]), float(row['depth'])])
+
+    return np.array(features)
+
+def load_features_from_npy(npy_file):
+    data = np.load(npy_file)
+    return data
 
 
 def _is_pil_image(img):
@@ -380,10 +398,22 @@ def generate_sparse_feature_map(featrue_path, prior_channels, height, width):
     # print(features.shape)
 
     # Process and visualize the depth prior
-    parametrization = get_depth_prior_from_features(features,prior_channels, height=height, width=width)
-    # parametrization = get_depth_prior_from_features(features,prior_channels, height=480, width=640)
+    # parametrization = get_depth_prior_from_features(features,prior_channels, height=height, width=width)
+    parametrization = get_depth_prior_from_features(features,prior_channels, height=240, width=320)
 
     return parametrization
+
+
+def generate_sparse_feature_map_npy(featrue_path, prior_channels):
+    # print(featrue_path)
+    parametrization = load_features_from_npy(featrue_path)
+
+    if prior_channels <=1:
+        parametrization = np.expand_dims(parametrization[:,:,0], axis=2)
+
+    return parametrization
+
+
 
 
 class DataLoadPreprocess(Dataset):
@@ -434,7 +464,9 @@ class DataLoadPreprocess(Dataset):
 
             image = self.reader.open(image_path)
             # sparse feature map is numpy array
-            sparse_feature_map = generate_sparse_feature_map(featrue_path, self.config.prior_channels, self.config.sparse_feature_height, self.config.sparse_feature_width)
+            # sparse_feature_map = generate_sparse_feature_map(featrue_path, self.config.prior_channels, self.config.sparse_feature_height, self.config.sparse_feature_width)
+            sparse_feature_map = generate_sparse_feature_map_npy(featrue_path, self.config.prior_channels)
+            # print(np.shape(sparse_feature_map))
             depth_gt = self.reader.open(depth_path)
             w, h = image.size
 
@@ -519,12 +551,14 @@ class DataLoadPreprocess(Dataset):
             feature_path = os.path.join(
                 data_path, remove_leading_slash(sample_path.split()[-1]))
             
+            # feature_path = feature_path.replace("matched_features", "matched_features_centreline")
+            
             # print(sample_path.split()[0])
             image = np.asarray(self.reader.open(image_path),
                                dtype=np.float32) / 255.0
 
-            sparse_feature_map = generate_sparse_feature_map(feature_path, self.config.prior_channels, self.config.sparse_feature_height, self.config.sparse_feature_width)
-
+            # sparse_feature_map = generate_sparse_feature_map(feature_path, self.config.prior_channels, self.config.sparse_feature_height, self.config.sparse_feature_width)
+            sparse_feature_map = generate_sparse_feature_map_npy(feature_path, self.config.prior_channels)
             if self.mode == 'online_eval':
                 gt_path = self.config.gt_path_eval
                 depth_path = os.path.join(
@@ -551,6 +585,12 @@ class DataLoadPreprocess(Dataset):
 
                     mask = np.logical_and(
                         depth_gt >= self.config.min_depth, depth_gt <= self.config.max_depth).squeeze()[None, ...]
+                    
+                    # if np.all(mask == False):
+                    #     print("The mask is an array of all zeros.")
+                    # else:
+                    #     print("The mask contains non-zero values.")
+                    
                 else:
                     mask = False
 

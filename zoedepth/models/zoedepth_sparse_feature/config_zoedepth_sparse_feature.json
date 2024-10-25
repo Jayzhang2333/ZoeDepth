@@ -3,7 +3,7 @@
         "name": "ZoeDepth_sparse_feature",
         "version_name": "v1",
         "n_bins": 64,
-        "bin_embedding_dim": 128,
+        "bin_embedding_dim": 126,
         "bin_centers_type": "softplus",
         "n_attractors":[16, 8, 4, 1],
         "attractor_alpha": 1000,
@@ -17,20 +17,20 @@
         "output_distribution": "logbinomial",
         "memory_efficient": true,
         "inverse_midas": false,
-        "img_size": [480, 640]
+        "img_size": [384, 512]
     },
     
     "train": {
         "train_midas": false,
         "use_pretrained_midas": true,
         "trainer": "ZoeDepth_sparse_feature",
-        "epochs": 10,
+        "epochs": 5,
         "bs": 4,
         "optim_kwargs": {"lr": 0.000161, "wd": 0.01},
         "sched_kwargs": {"div_factor": 1, "final_div_factor": 10000, "pct_start": 0.7, "three_phase":false, "cycle_momentum": true},
         "same_lr": false,
         "w_rmse":1,
-        "w_si": 0.5,
+        "w_si": 1,
         "w_domain": 0.2,
         "w_reg": 0,
         "w_grad": 0,

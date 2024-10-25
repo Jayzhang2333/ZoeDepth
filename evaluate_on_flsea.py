@@ -74,7 +74,10 @@ def evaluate(model, test_loader, config, round_vals=True, round_precision=3):
     metrics = RunningAverageDict()
     for i, sample in tqdm(enumerate(test_loader), total=len(test_loader)):
         if 'has_valid_depth' in sample:
+            
+            
             if not sample['has_valid_depth']:
+                
                 continue
         image, depth = sample['image'], sample['depth']
         image, depth = image.cuda(), depth.cuda()
