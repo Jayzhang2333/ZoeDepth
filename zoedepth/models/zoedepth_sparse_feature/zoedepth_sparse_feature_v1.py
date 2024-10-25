@@ -109,13 +109,13 @@ class ZoeDepth_sparse_feature(DepthModel):
         # add prior channels
         self.seed_bin_regressor = SeedBinRegressorLayer(
             btlnck_features + prior_channels, n_bins=n_bins, min_depth=min_depth, max_depth=max_depth)
-        self.seed_projector = Projector(btlnck_features + prior_channels, bin_embedding_dim)
+        self.seed_projector = Projector(btlnck_features, bin_embedding_dim)
         self.projectors = nn.ModuleList([
-            Projector(num_out+prior_channels, bin_embedding_dim)
+            Projector(num_out, bin_embedding_dim)
             for num_out in num_out_features
         ])
         self.attractors = nn.ModuleList([
-            Attractor(bin_embedding_dim , n_bins, n_attractors=n_attractors[i], min_depth=min_depth, max_depth=max_depth,
+            Attractor(bin_embedding_dim + prior_channels , n_bins, n_attractors=n_attractors[i], min_depth=min_depth, max_depth=max_depth,
                       alpha=attractor_alpha, gamma=attractor_gamma, kind=attractor_kind, attractor_type=attractor_type)
             for i in range(len(num_out_features))
         ])
@@ -124,7 +124,7 @@ class ZoeDepth_sparse_feature(DepthModel):
 
         # use log binomial instead of softmax
         self.conditional_log_binomial = ConditionalLogBinomial(
-            last_in, bin_embedding_dim, n_classes=n_bins, min_temp=min_temp, max_temp=max_temp)
+            last_in, bin_embedding_dim + prior_channels, n_classes=n_bins, min_temp=min_temp, max_temp=max_temp)
 
     def forward(self, x, sparse_feature = None, return_final_centers=False, denorm=False, return_probs=False, **kwargs):
         """
@@ -165,9 +165,12 @@ class ZoeDepth_sparse_feature(DepthModel):
                     align_corners=True,
                 )
             
-            x_d0 = torch.cat([x_d0, sparse_feature_scaled], dim = 1)
+            # x_d0 = torch.cat([x_d0, sparse_feature_scaled], dim = 1)
+            x = torch.cat([x_d0, sparse_feature_scaled], dim = 1)
+        else:
+            x = x_d0
         # x_d0 = self.conv2(x_d0)
-        x = x_d0
+        # x = x_d0
             
 
         _, seed_b_centers = self.seed_bin_regressor(x)
@@ -178,36 +181,43 @@ class ZoeDepth_sparse_feature(DepthModel):
         else:
             b_prev = seed_b_centers
 
-        prev_b_embedding = self.seed_projector(x)
+        # prev_b_embedding = self.seed_projector(x)
         # ADD PRIOR TO THE EMBEDDING RAW
-        # prev_b_embedding = torch.cat([prev_b_embedding, sparse_feature_scaled], dim = 1)
+        prev_b_embedding = self.seed_projector(x_d0)
+        sparse_feature_scaled = nn.functional.interpolate(
+                    sparse_feature,
+                    size=[prev_b_embedding.size(2), prev_b_embedding.size(3)],
+                    mode="bilinear",
+                    align_corners=True,
+                )
+        prev_b_embedding = torch.cat([prev_b_embedding, sparse_feature_scaled], dim = 1)
 
         # unroll this loop for better performance
         for projector, attractor, x in zip(self.projectors, self.attractors, x_blocks):
 
-            if sparse_feature is not None:
-                sparse_feature_scaled = nn.functional.interpolate(
-                        sparse_feature,
-                        size=[x.size(2), x.size(3)],
-                        mode="bilinear",
-                        align_corners=True,
-                    )
+            # if sparse_feature is not None:
+            #     sparse_feature_scaled = nn.functional.interpolate(
+            #             sparse_feature,
+            #             size=[x.size(2), x.size(3)],
+            #             mode="bilinear",
+            #             align_corners=True,
+            #         )
             
-                x = torch.cat([x, sparse_feature_scaled], dim = 1)
+            #     x = torch.cat([x, sparse_feature_scaled], dim = 1)
             
             b_embedding = projector(x)
             # INSTEAD OF CREATING THE EMBEDDING WITH THE SPARSE PRIOR, 
             # THIS ADD THE PRIOR TO THE EMBEDDING
             # THE ATTRACTOR LAYER GENERATES ATTRACTOR WITH THIS PRIOR
-            # if sparse_feature is not None:
-            #     sparse_feature_scaled = nn.functional.interpolate(
-            #             sparse_feature,
-            #             size=[b_embedding.size(2), b_embedding.size(3)],
-            #             mode="bilinear",
-            #             align_corners=True,
-            #         )
+            if sparse_feature is not None:
+                sparse_feature_scaled = nn.functional.interpolate(
+                        sparse_feature,
+                        size=[b_embedding.size(2), b_embedding.size(3)],
+                        mode="bilinear",
+                        align_corners=True,
+                    )
             
-            #     b_embedding = torch.cat([b_embedding, sparse_feature_scaled], dim = 1)
+                b_embedding = torch.cat([b_embedding, sparse_feature_scaled], dim = 1)
 
             b, b_centers = attractor(
                 b_embedding, b_prev, prev_b_embedding, interpolate=True)

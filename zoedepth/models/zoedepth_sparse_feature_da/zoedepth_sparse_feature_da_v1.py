@@ -286,9 +286,7 @@ class ZoeDepth_sparse_feature_da(DepthModel):
     @staticmethod
     def build(midas_model_type="DPT_BEiT_L_384", pretrained_resource=None, use_pretrained_midas=False, train_midas=False, freeze_midas_bn=True, **kwargs):
         core = MidasCore.build(midas_model_type=midas_model_type, use_pretrained_midas=use_pretrained_midas,
-                              train_midas=train_midas, fetch_features=True, freeze_bn=freeze_midas_bn, **kwargs)
-        
-        #core = DepthAnythingV2
+                               train_midas=train_midas, fetch_features=True, freeze_bn=freeze_midas_bn, **kwargs)
         model = ZoeDepth_sparse_feature_da(core, **kwargs)
         if pretrained_resource:
             assert isinstance(pretrained_resource, str), "pretrained_resource must be a string"

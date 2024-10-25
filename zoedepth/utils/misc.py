@@ -177,6 +177,8 @@ def compute_errors(gt, pred):
             'rmse_log': Root mean squared error on the log scale
             'silog': Scale invariant log error
     """
+    if gt.size == 0:
+        raise ValueError("Ground truth (gt) is empty, cannot compute errors.")
     thresh = np.maximum((gt / pred), (pred / gt))
     a1 = (thresh < 1.25).mean()
     a2 = (thresh < 1.25 ** 2).mean()
@@ -241,6 +243,9 @@ def compute_metrics(gt, pred, interpolate=True, garg_crop=False, eigen_crop=True
                 eval_mask[45:471, 41:601] = 1
         else:
             eval_mask = np.ones(valid_mask.shape)
+
+    # else:
+    #     eval_mask = np.ones(valid_mask.shape)
     valid_mask = np.logical_and(valid_mask, eval_mask)
     return compute_errors(gt_depth[valid_mask], pred[valid_mask])
 

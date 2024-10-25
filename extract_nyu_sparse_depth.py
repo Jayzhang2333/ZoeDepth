@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import matplotlib.pyplot as plt
 
 # Define the base directory to prepend to all paths (but not for output text)
-base_path = '/home/jay/shortcuts/datasets/nyu_depth_v2/test/test'
+base_path = '/home/jay/shortcuts/datasets/nyu_depth_v2/sync'
 
 # Function to display the image
 def display_image(title, img):
