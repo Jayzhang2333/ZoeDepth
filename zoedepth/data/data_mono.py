@@ -53,7 +53,34 @@ from .vkitti2 import get_vkitti2_loader
 
 from .preprocess import CropParams, get_white_border, get_black_border
 
+def generate_feature_map_for_ga(feature_fp, original_height=240, original_width=320, new_height=480, new_width=640):
+    # Read the CSV file
+    df = pd.read_csv(feature_fp)
 
+    # Initialize a blank depth map for the new image size with zeros
+    sparse_depth_map = np.full((new_height, new_width), 0.0, dtype=np.float32)
+
+    # Calculate scaling factors
+    scale_y = new_height / original_height
+    scale_x = new_width / original_width
+
+    # Iterate through the dataframe and populate the depth map with scaled coordinates
+    for index, row in df.iterrows():
+        # Scale pixel coordinates to new image size
+        pixel_row = int(row['row'] * scale_y)
+        pixel_col = int(row.get('column', row.get('col', 0)) * scale_x)
+        depth_value = float(row['depth'])
+
+        # Ensure the scaled coordinates are within the bounds of the new image size
+        if 0 <= pixel_row < new_height and 0 <= pixel_col < new_width:
+            sparse_depth_map[pixel_row, pixel_col] = depth_value
+
+    # print(np.shape(sparse_depth_map))
+    # print('data mono')
+    # print(np.max(sparse_depth_map))
+    # print(np.min(sparse_depth_map[sparse_depth_map>0]))
+    sparse_depth_map = sparse_depth_map[..., np.newaxis]
+    return sparse_depth_map
 
 
 
@@ -169,6 +196,7 @@ def load_features_from_csv(csv_file):
 
 def load_features_from_npy(npy_file):
     data = np.load(npy_file)
+    data[:,:,0] = data[:,:,0]/1.44
     return data
 
 
@@ -457,7 +485,7 @@ class DataLoadPreprocess(Dataset):
             else:
                 image_path = os.path.join(
                     self.config.data_path, remove_leading_slash(sample_path.split()[0]))
-                featrue_path = os.path.join(
+                feature_path = os.path.join(
                     self.config.data_path, remove_leading_slash(sample_path.split()[-1]))
                 depth_path = os.path.join(
                     self.config.gt_path, remove_leading_slash(sample_path.split()[1]))
@@ -465,7 +493,8 @@ class DataLoadPreprocess(Dataset):
             image = self.reader.open(image_path)
             # sparse feature map is numpy array
             # sparse_feature_map = generate_sparse_feature_map(featrue_path, self.config.prior_channels, self.config.sparse_feature_height, self.config.sparse_feature_width)
-            sparse_feature_map = generate_sparse_feature_map_npy(featrue_path, self.config.prior_channels)
+            sparse_feature_map = generate_sparse_feature_map_npy(feature_path, self.config.prior_channels)
+            # sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=480, original_width=640, new_height=480, new_width=640)
             # print(np.shape(sparse_feature_map))
             depth_gt = self.reader.open(depth_path)
             w, h = image.size
@@ -559,6 +588,7 @@ class DataLoadPreprocess(Dataset):
 
             # sparse_feature_map = generate_sparse_feature_map(feature_path, self.config.prior_channels, self.config.sparse_feature_height, self.config.sparse_feature_width)
             sparse_feature_map = generate_sparse_feature_map_npy(feature_path, self.config.prior_channels)
+            # sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=480, original_width=640, new_height=480, new_width=640)
             if self.mode == 'online_eval':
                 gt_path = self.config.gt_path_eval
                 depth_path = os.path.join(
@@ -577,7 +607,7 @@ class DataLoadPreprocess(Dataset):
                     
                     if self.config.dataset == 'nyu' or self.config.dataset == 'nyu_sparse_feature':
                         depth_gt = depth_gt / 1000.0
-                    elif self.config.dataset == "flsea_sparse_feature":
+                    elif self.config.dataset == "flsea_sparse_feature" or self.config.dataset == "lizard_sparse_feature":
                         depth_gt = depth_gt / 1.0
 
                     else:
@@ -621,9 +651,13 @@ class DataLoadPreprocess(Dataset):
                                   depth_gt < self.config.max_depth).squeeze()[None, ...]
             sample['mask'] = mask
 
+        
         if self.transform:
             # print("Go through transform")
             sample = self.transform(sample)
+
+        
+        
 
         sample = self.postprocess(sample)
         sample['dataset'] = self.config.dataset
@@ -742,8 +776,30 @@ class ToTensor(object):
         # print(f"sparse_feature_map type: {type(sparse_feature_map)}")
         # print(f"sparse feature map before resize and totensor {sparse_feature_map.shape}")
         # to tesnor handles both PIL image and numpy array
+        
+
         sparse_feature_map = self.to_tensor(sparse_feature_map)
+
+        # print('before resize')
+        # print(torch.max(sparse_feature_map))
+        # print(torch.min(sparse_feature_map[sparse_feature_map>0]))
+        # print(sparse_feature_map.shape)
+
+        
         sparse_feature_map = self.resize(sparse_feature_map)
+
+        # sparse_feature_map = sparse_feature_map.unsqueeze(1)
+        # sparse_feature_map = nn.functional.interpolate(
+        #             sparse_feature_map,
+        #             size=self.size,
+        #             mode="bilinear",
+        #             align_corners=True,
+        #         )
+        # sparse_feature_map = sparse_feature_map.squeeze(1)
+
+        # print('after resize')
+        # print(torch.max(sparse_feature_map))
+        # print(torch.min(sparse_feature_map[sparse_feature_map > 0]))
         # print(f"sparse_feature_map type after to tensor: {type(sparse_feature_map)}")
         # print(f"sparse_feature_map shape after to tensor: {sparse_feature_map.shape}")
 

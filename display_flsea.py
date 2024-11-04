@@ -3,8 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Assuming the depth map is stored in a file called 'depth_map.tif'
-depth_map_tif = Image.open('/home/jay/shortcuts/datasets/nyu_depth_v2/sync/basement_0001a/sync_depth_00000.png')
+depth_map_tif = Image.open('/media/jay/apple/uw_depth_lizard_data/depth_tiff/0422.tiff')
 
+print(np.shape(depth_map_tif))
 # Convert the image to a NumPy array
 depth_map_array = np.array(depth_map_tif)
 

@@ -4,7 +4,7 @@
         "version_name": "v1",
         "n_bins": 64,
         "bin_embedding_dim": 128,
-        "bin_centers_type": "softplus",
+        "bin_centers_type": "normed",
         "n_attractors":[16, 8, 4, 1],
         "attractor_alpha": 1000,
         "attractor_gamma": 2,

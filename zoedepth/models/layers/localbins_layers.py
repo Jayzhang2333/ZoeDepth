@@ -68,8 +68,39 @@ class SeedBinRegressor(nn.Module):
         return B_widths_normed, B_centers
 
 
+# class SeedBinRegressorUnnormed(nn.Module):
+#     def __init__(self, in_features, prior_channel = 0,n_bins=16, mlp_dim=128, min_depth=1e-3, max_depth=10):
+#         """Bin center regressor network. Bin centers are unbounded
+
+#         Args:
+#             in_features (int): input channels
+#             n_bins (int, optional): Number of bin centers. Defaults to 16.
+#             mlp_dim (int, optional): Hidden dimension. Defaults to 256.
+#             min_depth (float, optional): Not used. (for compatibility with SeedBinRegressor)
+#             max_depth (float, optional): Not used. (for compatibility with SeedBinRegressor)
+#         """
+#         super().__init__()
+#         self.version = "1_1"
+#         self._net = nn.Sequential(
+#             nn.Conv2d(in_features, mlp_dim, 1, 1, 0),
+#             nn.ReLU(inplace=True),
+#             nn.Conv2d(mlp_dim+prior_channel, n_bins, 1, 1, 0),
+#             nn.Softplus()
+#         )
+
+#     def forward(self, x, prior_map = None):
+#         """
+#         Returns tensor of bin_width vectors (centers). One vector b for every pixel
+#         """
+#         # B_centers = self._net(x)
+#         B_centers = self._net[:2](x)  # First Conv + ReLU
+#         B_centers = torch.cat((B_centers, prior_map), dim=1)  # Concatenate prior depth
+#         B_centers = self._net[2:](B_centers)  # Final Conv + Softplus
+#         return B_centers, B_centers
+
+
 class SeedBinRegressorUnnormed(nn.Module):
-    def __init__(self, in_features, n_bins=16, mlp_dim=256, min_depth=1e-3, max_depth=10):
+    def __init__(self, in_features, n_bins=16, mlp_dim=128, min_depth=1e-3, max_depth=10):
         """Bin center regressor network. Bin centers are unbounded
 
         Args:
@@ -95,7 +126,6 @@ class SeedBinRegressorUnnormed(nn.Module):
         B_centers = self._net(x)
         return B_centers, B_centers
 
-
 class Projector(nn.Module):
     def __init__(self, in_features, out_features, mlp_dim=128):
         """Projector MLP
@@ -111,6 +141,31 @@ class Projector(nn.Module):
             nn.Conv2d(in_features, mlp_dim, 1, 1, 0),
             nn.ReLU(inplace=True),
             nn.Conv2d(mlp_dim, out_features, 1, 1, 0),
+        )
+
+    def forward(self, x):
+        return self._net(x)
+    
+class PriorEmbeddingLayer(nn.Module):
+    def __init__(self, in_features=2, embedding_dim = 32, patch_size = 2):
+        """Prior Embedding 
+
+        Args:
+            in_features (int): input channels
+            embedding_dim (int): output channels
+            patch_size : patch size and stride size.
+        """
+        super().__init__()
+
+        self._net = nn.Sequential(
+            nn.Conv2d(
+            in_channels=in_features,
+            out_channels=embedding_dim,
+            kernel_size=patch_size,
+            stride=patch_size,
+            padding=0,
+        ),
+            nn.ReLU(inplace=True),
         )
 
     def forward(self, x):

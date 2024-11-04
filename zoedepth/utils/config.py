@@ -122,36 +122,36 @@ DATASETS_CONFIG = {
     "nyu_sparse_feature": {
         "dataset": "nyu_sparse_feature",
         "avoid_boundary": True,
-        "min_depth": 1e-3,   # originally 0.1
+        "min_depth": 0.1,   # originally 0.1
         "max_depth": 10,
         "data_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
         "gt_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
-        "filenames_file": "./train_test_inputs/NPY_removed_bathroom_nyu_extract_train_sparse_depth.txt",
+        "filenames_file": "./train_test_inputs/subsampled_200_NPY_removed_bathroom_nyu_extract_train_sparse_depth.txt",
         "input_height": 480,
         "input_width": 640,
         "sparse_feature_height": 480,
         "sparse_feature_width":680,
         "data_path_eval": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/test/test/"),
         "gt_path_eval": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/test/test/"),
-        "filenames_file_eval": "./train_test_inputs/NPY_removed_bathroom_nyu_extract_test_sparse_depth.txt",
-        "min_depth_eval": 1e-3,
+        "filenames_file_eval": "./train_test_inputs/subsampled_200_NPY_removed_bathroom_nyu_extract_test_sparse_depth.txt",
+        "min_depth_eval": 0.1,
         "max_depth_eval": 10,
         "min_depth_diff": -10,
         "max_depth_diff": 10,
 
-        "do_random_rotate": True,
+        "do_random_rotate": False,
         "degree": 1.0,
         "do_kb_crop": False,
         "garg_crop": False,
         "eigen_crop": True,
-        "do_input_resize": False
+        "do_input_resize": True
 
     },
     "flsea_sparse_feature": {
         "dataset": "flsea_sparse_feature",
         "avoid_boundary": False,
         "min_depth": 0.1,   # flsea dataset, canyons is from 4-7m, red sea is from 3-8m
-        "max_depth": 10.0,
+        "max_depth": 1.0,
         #"data_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
         #"gt_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
         #"filenames_file": "./train_test_inputs/removed_bathroom_nyu_extract_train_sparse_depth.txt",
@@ -160,17 +160,43 @@ DATASETS_CONFIG = {
 
         "data_path_eval": "/",
         "gt_path_eval": "/",
-        "filenames_file_eval": "./train_test_inputs/NPY_flsea_test_with_features.txt",
+        "filenames_file_eval": "./train_test_inputs/new_probability_NPY_flsea_test_with_features.txt",
         "min_depth_eval": 0.1,
-        "max_depth_eval": 10.0,
+        "max_depth_eval": 1.0,
         "sparse_feature_height": 240,
         "sparse_feature_width":320,
-        "do_random_rotate": True,
+        "do_random_rotate": False,
         "degree": 1.0,
         "do_kb_crop": False,
         "garg_crop": False,
         "eigen_crop": True,
-        "do_input_resize": False
+        "do_input_resize": True
+
+    },
+    "lizard_sparse_feature": {
+        "dataset": "lizard_sparse_feature",
+        "avoid_boundary": False,
+        "min_depth": 0.1,   # flsea dataset, canyons is from 4-7m, red sea is from 3-8m
+        "max_depth": 5.0,
+        #"data_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
+        #"gt_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
+        #"filenames_file": "./train_test_inputs/removed_bathroom_nyu_extract_train_sparse_depth.txt",
+        "input_height": 1002,
+        "input_width": 1355,
+
+        "data_path_eval": "/",
+        "gt_path_eval": "/",
+        "filenames_file_eval": "./train_test_inputs/prior_map__image_depth_paths.txt",
+        "min_depth_eval": 0.1,
+        "max_depth_eval": 5.0,
+        "sparse_feature_height": 1002,
+        "sparse_feature_width":1355,
+        "do_random_rotate": False,
+        "degree": 1.0,
+        "do_kb_crop": False,
+        "garg_crop": False,
+        "eigen_crop": False,
+        "do_input_resize": True
 
     },
     "ibims": {
@@ -298,7 +324,7 @@ COMMON_TRAINING_CONFIG = {
     "shared_dict": None,
     "use_amp": False,
 
-    "aug": True,
+    "aug": False,
     "random_crop": False,
     "random_translate": False,
     "translate_prob": 0.2,

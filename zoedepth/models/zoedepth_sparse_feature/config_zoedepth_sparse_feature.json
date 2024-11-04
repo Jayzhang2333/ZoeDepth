@@ -3,7 +3,7 @@
         "name": "ZoeDepth_sparse_feature",
         "version_name": "v1",
         "n_bins": 64,
-        "bin_embedding_dim": 126,
+        "bin_embedding_dim": 128,
         "bin_centers_type": "softplus",
         "n_attractors":[16, 8, 4, 1],
         "attractor_alpha": 1000,

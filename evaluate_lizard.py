@@ -119,8 +119,9 @@ def evaluate(model, test_loader, config, round_vals=True, round_precision=3):
         def r(m): return round(m, round_precision)
     else:
         def r(m): return m
-    metrics = {k: r(v) for k, v in metrics.get_value().items()}
     print(count)
+    metrics = {k: r(v) for k, v in metrics.get_value().items()}
+    # print(count)
     return metrics
 
 def main(config):

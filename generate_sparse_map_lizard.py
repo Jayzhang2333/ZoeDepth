@@ -19,7 +19,6 @@ def get_distance_maps(height, width, idcs_height, idcs_width):
 #     probabilities = np.exp(-distance_maps / max_dist)
 #     return probabilities
 from scipy.stats import norm
-
 def get_probability_maps(dist_map):
     """Takes a Nx1xHxW distance map as input and outputs a probability map.
     Pixels with small distance to closest keypoint have high probability and vice versa."""
@@ -111,23 +110,36 @@ def get_depth_prior_from_features(features, prior_channels, height=240, width=32
 
         return parametrization
 
-def load_features_from_csv(csv_file):
-    """Loads features from a CSV file into a NumPy array."""
+import random
+def load_features_from_txt(txt_file, sample_size=None):
+    """Loads features from a space-separated TXT file into a NumPy array with optional random subsampling."""
     features = []
 
-    with open(csv_file, mode='r') as file:
-        csv_reader = csv.DictReader(file)
-        col_name = 'col' if 'col' in csv_reader.fieldnames else 'column'
+    # Open and read the TXT file
+    with open(txt_file, mode='r') as file:
+        # Use space as the delimiter
+        csv_reader = csv.DictReader(file, delimiter=' ')
+        
+        # Check if the header contains expected column names
+        if 'column' not in csv_reader.fieldnames:
+            raise ValueError("TXT file must contain a header with 'row', 'column', and 'depth'.")
 
-        # Extract the relevant columns ('row', col_name, 'depth')
+        # Extract the relevant columns ('row', 'column', 'depth')
         for row in csv_reader:
-            features.append([float(row['row']), float(row[col_name]), float(row['depth'])])
+            try:
+                features.append([float(row['row']), float(row['column']), float(row['depth'])])
+            except ValueError:
+                print(f"Skipping row with missing or invalid data: {row}")
+
+    # Perform random subsampling if sample_size is specified and less than total rows
+    if sample_size is not None and sample_size < len(features):
+        features = random.sample(features, sample_size)
 
     return np.array(features)
 
 def generate_sparse_feature_map(featrue_path, prior_channels, height, width):
     # print(featrue_path)
-    features = load_features_from_csv(featrue_path)
+    features = load_features_from_txt(featrue_path)
 
     # Reshape features into the required batch format (batch_size, num_features, 3)
     # Since we're working with one image, we expand the dimensions to simulate a batch of size 1
@@ -137,7 +149,7 @@ def generate_sparse_feature_map(featrue_path, prior_channels, height, width):
 
     # Process and visualize the depth prior
     # parametrization = get_depth_prior_from_features(features,prior_channels, height=height, width=width)
-    parametrization = get_depth_prior_from_features(features,prior_channels, height=240, width=320)
+    parametrization = get_depth_prior_from_features(features,prior_channels, height=1002, width=1355)
 
     return parametrization
 
@@ -159,7 +171,7 @@ def process_txt_file(txt_file, base_directory, prior_channels, height, width):
     txt_filename = os.path.basename(txt_file)
     
     # Create the new txt file path by prepending 'NPY_' to the original filename
-    new_txt_file = os.path.join(txt_directory, f"new_probability_NPY_{txt_filename}")
+    new_txt_file = os.path.join(txt_directory, f"norm_50_prior_map__{txt_filename}")
     
     # Open the original txt file for reading and the new txt file for writing
     with open(txt_file, mode='r') as file, open(new_txt_file, mode='w') as new_file:
@@ -173,16 +185,14 @@ def process_txt_file(txt_file, base_directory, prior_channels, height, width):
             
             # Prepend the base directory to the relative CSV path
             csv_full_path = os.path.join(base_directory, csv_relative_path)
-            print(base_directory)
-            print(csv_relative_path)
-            print(csv_full_path)
+            
             # Call the function with the constructed CSV file path
             feature_map = generate_sparse_feature_map(csv_full_path, prior_channels, height, width)
             
             # Determine the directory and file name for saving the .npy file
             csv_directory = os.path.dirname(csv_full_path)
-            csv_filename = os.path.basename(csv_full_path).replace('.csv', '.npy')
-            csv_filename = f"new_probability_{csv_filename}"
+            csv_filename = os.path.basename(csv_full_path).replace('.txt', '.npy')
+            csv_filename = f"norm_50_new_probability_{csv_filename}"
             npy_save_path = os.path.join(csv_directory, csv_filename)
             
             # Save the feature map as a .npy file
@@ -194,15 +204,16 @@ def process_txt_file(txt_file, base_directory, prior_channels, height, width):
             
             # Write the modified line to the new text file
             new_file.write(' '.join(columns) + '\n')
+            
     
     print(f"Saved new txt file with .npy paths to: {new_txt_file}")
 
 # Example usage
-txt_file_path = './train_test_inputs/flsea_test_with_features.txt'
-base_dir = ''
+txt_file_path = '/media/jay/apple/uw_depth_lizard_data/image_depth_paths.txt'
+base_dir = ""
 prior_channels = 2
-height = 240
-width = 320
+height = 1002
+width = 1355
 
 process_txt_file(txt_file_path, base_dir, prior_channels, height, width)
 

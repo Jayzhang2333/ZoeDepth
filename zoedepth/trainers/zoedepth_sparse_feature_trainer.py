@@ -36,6 +36,8 @@ from torchvision import transforms
 from PIL import Image
 import numpy as np
 
+import matplotlib.pyplot as plt
+
 class Trainer(BaseTrainer):
     def __init__(self, config, model, train_loader, test_loader=None, device=None):
         super().__init__(config, model, train_loader,
@@ -64,14 +66,61 @@ class Trainer(BaseTrainer):
 
         losses = {}
 
+
+        rgb_image = batch['image'][0].permute(1, 2, 0).cpu().numpy()  # Convert to HWC for visualization
+        depth_map = batch['depth'][0].squeeze().cpu().numpy()  # Squeeze to remove (1, H, W) -> (H, W)
+        feature_map = batch['sparse_map'][0].cpu().numpy()  # Feature map (2 channels)
+
+        # Print shapes
+        # print(batch['image_path'][0])
+        # print(f"RGB Image shape: {rgb_image.shape}")          # Should be (H, W, 3)
+        # print(f"Depth Map shape: {depth_map.shape}")          # Should be (H, W)
+        # print(f"Feature Map shape: {feature_map.shape}")      # Should be (2, H, W)
+
+        # Visualize the data
+        # fig, axs = plt.subplots(1, 4, figsize=(20, 5))  # Adjust figsize to control overall size
+        
+        # # RGB Image
+        # axs[0].imshow(rgb_image)
+        # axs[0].set_title('RGB Image')
+        # axs[0].axis('off')
+        # axs[0].set_aspect('equal')  # Or 'equal' to preserve natural aspect ratio
+
+        # # Depth Map
+        # im = axs[1].imshow(depth_map, cmap='plasma')
+        # axs[1].set_title('Depth Map')
+        # axs[1].axis('off')
+        # axs[1].set_aspect('equal')  # Or 'equal'
+        # fig.colorbar(im, ax=axs[1])
+
+        # # Feature Map Channel 1
+        # im = axs[2].imshow(feature_map[0], cmap='plasma')
+        # axs[2].set_title('Feature Map - Channel 1')
+        # axs[2].axis('off')
+        # axs[2].set_aspect('equal')  # Or 'equal'
+        # fig.colorbar(im, ax=axs[2])
+
+        # # Feature Map Channel 2
+        # im = axs[3].imshow(feature_map[1], cmap='plasma')
+        # axs[3].set_title('Feature Map - Channel 2')
+        # axs[3].axis('off')
+        # axs[3].set_aspect('equal')  # Or 'equal'
+        # fig.colorbar(im, ax=axs[3])
+
+        # plt.show()
+    
+
         with amp.autocast(enabled=self.config.use_amp):
 
             if self.config.prior_channels > 0:
+                # print(images[0].shape)
+                # print(depths_gt[0].shape)
+                
                 output = self.model(images, sparse_feature = sparse_features)
             else:
                 output = self.model(images)
             pred_depths = output['metric_depth']
-
+            # print(pred_depths[0].shape)
             l_si, pred = self.silog_loss(
                 pred_depths, depths_gt, mask=mask, interpolate=True, return_interpolated=True)
             
@@ -104,9 +153,17 @@ class Trainer(BaseTrainer):
         if self.should_log and (self.step % int(self.config.log_images_every * self.iters_per_epoch)) == 0:
             # -99 is treated as invalid depth in the log_images function and is colored grey.
             depths_gt[torch.logical_not(mask)] = -99
-
-            self.log_images(rgb={"Input": images[0, ...]}, depth={"GT": depths_gt[0], "PredictedMono": pred[0]}, prefix="Train",
+            # print(images[0, ...].shape)
+            # print(depths_gt[0].shape[-2:])
+            # print(pred_depths[0].shape)
+            input_resized = nn.functional.interpolate(images[0, ...].unsqueeze(0), size=depths_gt[0].shape[-2:], mode='bilinear', align_corners=False)
+            pred_resized = nn.functional.interpolate(pred[0].unsqueeze(0), size=depths_gt[0].shape[-2:], mode='bilinear', align_corners=False)
+            
+            self.log_images(rgb={"Input": input_resized}, depth={"GT": depths_gt[0], "PredictedMono": pred_resized}, prefix="Train",
                             min_depth=DATASETS_CONFIG[dataset]['min_depth'], max_depth=DATASETS_CONFIG[dataset]['max_depth'])
+            # self.log_images(rgb={"Input": images[0, ...]}, depth={"GT": depths_gt[0], "PredictedMono": pred[0]}, prefix="Train",
+            #                 min_depth=DATASETS_CONFIG[dataset]['min_depth'], max_depth=DATASETS_CONFIG[dataset]['max_depth'])
+
 
             if self.config.get("log_rel", False):
                 self.log_images(
@@ -198,7 +255,17 @@ class Trainer(BaseTrainer):
 
         if val_step == 1 and self.should_log:
             depths_gt[torch.logical_not(mask)] = -99
-            self.log_images(rgb={"Input": images[0]}, depth={"GT": depths_gt[0], "PredictedMono": pred_depths[0]}, prefix="Test",
+            # print(images[0].shape)
+            # print(depths_gt[0].shape)
+            # print(pred_depths[0].shape)
+
+            input_resized = nn.functional.interpolate(images[0].unsqueeze(0), size=depths_gt[0].shape[-2:], mode='bilinear', align_corners=False)
+            pred_resized = nn.functional.interpolate(pred_depths[0].unsqueeze(0), size=depths_gt[0].shape[-2:], mode='bilinear', align_corners=False)
+            
+            self.log_images(rgb={"Input": input_resized}, depth={"GT": depths_gt[0], "PredictedMono": pred_resized}, prefix="Test",
                             min_depth=DATASETS_CONFIG[dataset]['min_depth'], max_depth=DATASETS_CONFIG[dataset]['max_depth'])
+            
+            # self.log_images(rgb={"Input": images[0]}, depth={"GT": depths_gt[0], "PredictedMono": pred_depths[0]}, prefix="Test",
+            #                 min_depth=DATASETS_CONFIG[dataset]['min_depth'], max_depth=DATASETS_CONFIG[dataset]['max_depth'])
 
         return metrics, losses

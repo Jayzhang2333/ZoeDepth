@@ -23,7 +23,8 @@
 # File author: Shariq Farooq Bhat
 
 import itertools
-
+import numpy as np
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from zoedepth.models.depth_model import DepthModel
@@ -31,7 +32,9 @@ from zoedepth.models.base_models.midas import MidasCore
 from zoedepth.models.layers.attractor import AttractorLayer, AttractorLayerUnnormed
 from zoedepth.models.layers.dist_layers import ConditionalLogBinomial
 from zoedepth.models.layers.localbins_layers import (Projector, SeedBinRegressor,
-                                            SeedBinRegressorUnnormed)
+                                            SeedBinRegressorUnnormed, PriorEmbeddingLayer)
+
+from zoedepth.models.layers.global_alignment import LeastSquaresEstimator
 from zoedepth.models.model_io import load_state_from_resource
 
 
@@ -84,7 +87,9 @@ class ZoeDepth_sparse_feature(DepthModel):
 
         N_MIDAS_OUT = 32
         btlnck_features = self.core.output_channels[0]
+        print(f"bottleneck channel number: {btlnck_features}")
         num_out_features = self.core.output_channels[1:]
+        print(f"other decoder channel number: {num_out_features}")
 
         # add the prior channels
         self.conv2 = nn.Conv2d(btlnck_features  , btlnck_features ,
@@ -108,23 +113,48 @@ class ZoeDepth_sparse_feature(DepthModel):
 
         # add prior channels
         self.seed_bin_regressor = SeedBinRegressorLayer(
-            btlnck_features + prior_channels, n_bins=n_bins, min_depth=min_depth, max_depth=max_depth)
-        self.seed_projector = Projector(btlnck_features, bin_embedding_dim)
-        self.projectors = nn.ModuleList([
-            Projector(num_out, bin_embedding_dim)
-            for num_out in num_out_features
+            bin_embedding_dim, n_bins=n_bins, min_depth=min_depth, max_depth=max_depth)
+        
+        # self.seed_projector = Projector(btlnck_features, bin_embedding_dim-64)
+        self.seed_projector = Projector(btlnck_features, bin_embedding_dim//2)
+
+        # self.first_prior_embedding_layer = PriorEmbeddingLayer(in_features = prior_channels, embedding_dim = 4)
+        self.first_prior_embedding_layer = PriorEmbeddingLayer(in_features = prior_channels, embedding_dim = bin_embedding_dim//2)
+        dimension_list = [16,64,64,64]
+        pre_dimension_list = [4, 16,64,64]
+        pre_dimension_list_inverse = [64, 64, 16, 4]
+        # self.priorembeddinglayers = nn.ModuleList([
+        #     PriorEmbeddingLayer(in_features = pre_dimension_list[i], embedding_dim = dimension_list[i])
+        #     for i in range(len(num_out_features))
+        # ])
+        self.priorembeddinglayers = nn.ModuleList([
+            PriorEmbeddingLayer(in_features = bin_embedding_dim//2, embedding_dim = bin_embedding_dim//2)
+            for i in range(len(num_out_features))
         ])
+
+        # self.projectors = nn.ModuleList([
+        #     Projector(num_out_features[i], bin_embedding_dim - pre_dimension_list_inverse[i] )
+        #     for i in range(len(num_out_features))
+        # ])
+
+        self.projectors = nn.ModuleList([
+            Projector(num_out_features[i], bin_embedding_dim//2 )
+            for i in range(len(num_out_features))
+        ])
+
         self.attractors = nn.ModuleList([
-            Attractor(bin_embedding_dim + prior_channels , n_bins, n_attractors=n_attractors[i], min_depth=min_depth, max_depth=max_depth,
+            Attractor(bin_embedding_dim , n_bins, n_attractors=n_attractors[i], min_depth=min_depth, max_depth=max_depth,
                       alpha=attractor_alpha, gamma=attractor_gamma, kind=attractor_kind, attractor_type=attractor_type)
             for i in range(len(num_out_features))
         ])
+
+        
 
         last_in = N_MIDAS_OUT + 1  # +1 for relative depth
 
         # use log binomial instead of softmax
         self.conditional_log_binomial = ConditionalLogBinomial(
-            last_in, bin_embedding_dim + prior_channels, n_classes=n_bins, min_temp=min_temp, max_temp=max_temp)
+            last_in, bin_embedding_dim, n_classes=n_bins, min_temp=min_temp, max_temp=max_temp)
 
     def forward(self, x, sparse_feature = None, return_final_centers=False, denorm=False, return_probs=False, **kwargs):
         """
@@ -149,31 +179,105 @@ class ZoeDepth_sparse_feature(DepthModel):
         rel_depth, out = self.core(x, denorm=denorm, return_rel_depth=True)
         # print("output shapes", rel_depth.shape, out.shape)
 
+        # rel_depth_np = rel_depth.cpu().numpy()
+        # print(torch.max(sparse_feature[0]))
+        # print(torch.min(sparse_feature[0][sparse_feature[0] > 0]))
+        # sparse_feature_np = sparse_feature.cpu().numpy() 
+        # print(np.shape(sparse_feature_np))
+        # print(np.max(sparse_feature_np))
+
+        # sparse_feature_np[~input_sparse_depth_valid] = np.inf # set invalid depth
+
+        # batch_size = rel_depth_np.shape[0]
+        # int_depth_batch = []
+
+        # for i in range(batch_size):
+        #     # Extract individual depth maps and priors
+        #     rel_depth_single = rel_depth_np[i]
+            
+        #     sparse_feature_single = np.squeeze(sparse_feature_np[i], axis=0)
+        #     print(np.shape(sparse_feature_single))
+        #     print(np.max(sparse_feature_single))
+        #     print(np.min(sparse_feature_single[sparse_feature_single>0.5]))
+
+        #     input_sparse_depth_valid = (sparse_feature_single < self.max_depth) * (sparse_feature_single > 0.5)
+        #     input_sparse_depth_valid = input_sparse_depth_valid.astype(bool)
+        #     sparse_feature_single[~input_sparse_depth_valid] = np.inf
+        #     # print(np.shape(sparse_feature_single))
+        #     # print(np.max(sparse_feature_single))
+
+        #     sparse_feature_single = 1.0/sparse_feature_single
+        #     # print(np.shape(sparse_feature_single))
+        #     # print(np.max(sparse_feature_single))
+        #     # print(np.shape(rel_depth_single))
+        #     # print(np.shape(sparse_feature_single))
+        #     # print(np.shape(input_sparse_depth_valid))
+           
+
+        #     # Process each using LeastSquaresEstimator
+        #     GlobalAlignment = LeastSquaresEstimator(
+        #         estimate=rel_depth_single,
+        #         target=sparse_feature_single,
+        #         valid=input_sparse_depth_valid
+        #     )
+        #     GlobalAlignment.compute_scale_and_shift()
+        #     GlobalAlignment.apply_scale_and_shift()
+        #     GlobalAlignment.clamp_min_max(clamp_min=1e-3, clamp_max=10.0)
+            
+        #     # Store the output depth map
+        #     int_depth_batch.append(GlobalAlignment.output.astype(np.float32))
+
+
+        #     plt.imshow(sparse_feature_single, cmap='viridis')  # Use 'viridis' or any other colormap you prefer
+        #     plt.colorbar(label='Depth')  # Optional: Adds a color bar for reference
+        #     plt.title("Int Depth Visualization")
+        #     plt.show()
+
+        # int_depth_batch = np.stack(int_depth_batch)
+
+        # int_depth = torch.from_numpy(int_depth_batch).float().to(sparse_feature.device)  # Ensure same device
+
+
+        # rel_depth_unsqueeze = rel_depth.unsqueeze(1)
+        # int_depth = torch.cat([int_depth, rel_depth_unsqueeze], dim = 1)
+
+
+        prior_embeddings = []
+        # print(sparse_feature.shape)
+        # print(rel_depth.shape)
+        # rel_depth_unsqueeze = rel_depth.unsqueeze(1)
+        # sparse_feature = torch.cat([sparse_feature, rel_depth_unsqueeze], dim = 1)
+        prior_embeddings.append(self.first_prior_embedding_layer(sparse_feature))
+        for prior_embedding_layer in self.priorembeddinglayers:
+            prior_embeddings.insert(0, prior_embedding_layer(prior_embeddings[0]))
+
         outconv_activation = out[0]
         btlnck = out[1]
+        # print(f"bottleneck dimension is: {btlnck.shape}")
         x_blocks = out[2:]
         # x_d0 = btlnck
         x_d0 = self.conv2(btlnck)
         
 
         #interpolate the sparse prior and concat with the bottle neck
-        if sparse_feature is not None:
-            sparse_feature_scaled = nn.functional.interpolate(
-                    sparse_feature,
-                    size=[x_d0.size(2), x_d0.size(3)],
-                    mode="bilinear",
-                    align_corners=True,
-                )
+        # if sparse_feature is not None:
+        #     sparse_feature_scaled = nn.functional.interpolate(
+        #             sparse_feature,
+        #             size=[x_d0.size(2), x_d0.size(3)],
+        #             mode="bilinear",
+        #             align_corners=True,
+        #         )
             
-            # x_d0 = torch.cat([x_d0, sparse_feature_scaled], dim = 1)
-            x = torch.cat([x_d0, sparse_feature_scaled], dim = 1)
-        else:
-            x = x_d0
+        #     x_d0 = torch.cat([x_d0, sparse_feature_scaled], dim = 1)
+            # x = torch.cat([x_d0, sparse_feature_scaled], dim = 1)
+        # else:
+            # x = x_d0
         # x_d0 = self.conv2(x_d0)
         # x = x_d0
             
-
-        _, seed_b_centers = self.seed_bin_regressor(x)
+        b_embedding = self.seed_projector(x_d0)
+        b_embedding = torch.cat([b_embedding, prior_embeddings[0]], dim = 1)
+        _, seed_b_centers = self.seed_bin_regressor(b_embedding)
 
         if self.bin_centers_type == 'normed' or self.bin_centers_type == 'hybrid2':
             b_prev = (seed_b_centers - self.min_depth) / \
@@ -183,17 +287,17 @@ class ZoeDepth_sparse_feature(DepthModel):
 
         # prev_b_embedding = self.seed_projector(x)
         # ADD PRIOR TO THE EMBEDDING RAW
-        prev_b_embedding = self.seed_projector(x_d0)
-        sparse_feature_scaled = nn.functional.interpolate(
-                    sparse_feature,
-                    size=[prev_b_embedding.size(2), prev_b_embedding.size(3)],
-                    mode="bilinear",
-                    align_corners=True,
-                )
-        prev_b_embedding = torch.cat([prev_b_embedding, sparse_feature_scaled], dim = 1)
+        prev_b_embedding = b_embedding
+        # sparse_feature_scaled = nn.functional.interpolate(
+        #             sparse_feature,
+        #             size=[prev_b_embedding.size(2), prev_b_embedding.size(3)],
+        #             mode="bilinear",
+        #             align_corners=True,
+        #         )
+        # prev_b_embedding = torch.cat([prev_b_embedding, sparse_feature_scaled], dim = 1)
 
         # unroll this loop for better performance
-        for projector, attractor, x in zip(self.projectors, self.attractors, x_blocks):
+        for idx, (projector, attractor, x) in enumerate(zip(self.projectors, self.attractors, x_blocks)):
 
             # if sparse_feature is not None:
             #     sparse_feature_scaled = nn.functional.interpolate(
@@ -204,23 +308,24 @@ class ZoeDepth_sparse_feature(DepthModel):
             #         )
             
             #     x = torch.cat([x, sparse_feature_scaled], dim = 1)
-            
+            # print(f"decoder dimension is: {x.shape}")
             b_embedding = projector(x)
+            b_embedding = torch.cat([b_embedding, prior_embeddings[idx+1]], dim = 1)
             # INSTEAD OF CREATING THE EMBEDDING WITH THE SPARSE PRIOR, 
             # THIS ADD THE PRIOR TO THE EMBEDDING
             # THE ATTRACTOR LAYER GENERATES ATTRACTOR WITH THIS PRIOR
-            if sparse_feature is not None:
-                sparse_feature_scaled = nn.functional.interpolate(
-                        sparse_feature,
-                        size=[b_embedding.size(2), b_embedding.size(3)],
-                        mode="bilinear",
-                        align_corners=True,
-                    )
+            # if sparse_feature is not None:
+            #     sparse_feature_scaled = nn.functional.interpolate(
+            #             sparse_feature,
+            #             size=[b_embedding.size(2), b_embedding.size(3)],
+            #             mode="bilinear",
+            #             align_corners=True,
+            #         )
             
-                b_embedding = torch.cat([b_embedding, sparse_feature_scaled], dim = 1)
+                # b_embedding = torch.cat([b_embedding, sparse_feature_scaled], dim = 1)
 
             b, b_centers = attractor(
-                b_embedding, b_prev, prev_b_embedding, interpolate=True)
+                b_embedding, b_prev, prev_b_embedding = prev_b_embedding, interpolate=True)
             b_prev = b.clone()
             prev_b_embedding = b_embedding.clone()
 
