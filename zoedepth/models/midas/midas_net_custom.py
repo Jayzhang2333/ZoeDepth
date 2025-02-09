@@ -45,7 +45,8 @@ class MidasNet_small_videpth(BaseModel):
         super(MidasNet_small_videpth, self).__init__()
 
         use_pretrained = False if path else True
-        use_pretrained = False
+        print(f'use pre-trained weight is {use_pretrained}')
+        # use_pretrained = False
                 
         self.channels_last = channels_last
         self.blocks = blocks
