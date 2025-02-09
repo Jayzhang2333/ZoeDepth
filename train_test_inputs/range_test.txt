@@ -1,0 +1,1 @@
+/home/jay/Downloads/void_release/void_150/data/office3/image/1552625446.7714.png /home/jay/Downloads/void_release/void_150/data/office3/ground_truth/1552625446.7714.png /home/jay/Downloads/void_release/void_150/data/office3/sparse_depth/1552625446.7714.png

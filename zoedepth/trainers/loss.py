@@ -37,6 +37,42 @@ def extract_key(prediction, key):
         return prediction[key]
     return prediction
 
+
+class L1SmoothLoss(nn.Module):
+    """Root Mean Squared Error (RMSE)"""
+
+    def __init__(self) -> None:
+        super(L1SmoothLoss, self).__init__()
+
+        self.name = "L1SmoothLoss"
+
+        self.l1smooth_loss = nn.SmoothL1Loss()
+
+    def forward(self, input, target, mask=None, interpolate=True):
+
+        input = extract_key(input, KEY_OUTPUT)
+        if input.shape[-1] != target.shape[-1] and interpolate:
+            input = nn.functional.interpolate(
+                input, target.shape[-2:], mode='bilinear', align_corners=True)
+            intr_input = input
+        else:
+            intr_input = input
+
+        if target.ndim == 3:
+            target = target.unsqueeze(1)
+
+        if mask is not None:
+            if mask.ndim == 3:
+                mask = mask.unsqueeze(1)
+
+            input = input[mask]
+            target = target[mask]
+
+        with amp.autocast(enabled=False):
+            loss = self.l1smooth_loss(input, target)
+
+        return loss
+
 class RMSELoss(nn.Module):
     """Root Mean Squared Error (RMSE)"""
 

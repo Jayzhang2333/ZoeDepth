@@ -126,14 +126,16 @@ DATASETS_CONFIG = {
         "max_depth": 10,
         "data_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
         "gt_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
-        "filenames_file": "./train_test_inputs/subsampled_200_NPY_removed_bathroom_nyu_extract_train_sparse_depth.txt",
+        "filenames_file": "./train_test_inputs/removed_bathroom_nyu_extract_train_sparse_depth.txt",
+        # "filenames_file_prior_map": "./train_test_inputs/removed_bathroom_nyu_extract_train_sparse_depth.txt",
         "input_height": 480,
         "input_width": 640,
         "sparse_feature_height": 480,
         "sparse_feature_width":680,
         "data_path_eval": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/test/test/"),
         "gt_path_eval": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/test/test/"),
-        "filenames_file_eval": "./train_test_inputs/subsampled_200_NPY_removed_bathroom_nyu_extract_test_sparse_depth.txt",
+        "filenames_file_eval": "./train_test_inputs/removed_bathroom_nyu_extract_test_sparse_depth.txt",
+        # "filenames_file_eval_prior_map": "./train_test_inputs/removed_bathroom_nyu_extract_test_sparse_depth.txt",
         "min_depth_eval": 0.1,
         "max_depth_eval": 10,
         "min_depth_diff": -10,
@@ -147,29 +149,90 @@ DATASETS_CONFIG = {
         "do_input_resize": True
 
     },
+    "void": {
+        "dataset": "void",
+        "avoid_boundary": False,
+        "min_depth": 0.1,   # originally 0.1
+        "max_depth": 10,
+        "data_path": "/",
+        "gt_path": "/",
+        "filenames_file": "./train_test_inputs/void_150_combined_training_list_random_filtered.txt",
+        # "filenames_file_prior_map": "./train_test_inputs/removed_bathroom_nyu_extract_train_sparse_depth.txt",
+        "input_height": 480,
+        "input_width": 640,
+        "sparse_feature_height": 480,
+        "sparse_feature_width":680,
+        "data_path_eval": "/",
+        "gt_path_eval": "/",
+        "filenames_file_eval": "./train_test_inputs/range_test.txt",
+        # "filenames_file_eval": "./train_test_inputs/void_150_combined_testing_list_random_filtered.txt",
+        # "filenames_file_eval_prior_map": "./train_test_inputs/removed_bathroom_nyu_extract_test_sparse_depth.txt",
+        "min_depth_eval": 0.1,
+        "max_depth_eval": 10,
+        "min_depth_diff": -10,
+        "max_depth_diff": 10,
+
+        "do_random_rotate": False,
+        "degree": 1.0,
+        "do_kb_crop": False,
+        "garg_crop": False,
+        "eigen_crop": False,
+        "do_input_resize": True
+
+    },
+    "tartanair": {
+        "dataset": "tartanair",
+        "avoid_boundary": False,
+        "min_depth": 0.1,   # originally 0.1
+        "max_depth": 18.0,
+        "data_path": "/",
+        "gt_path": "/",
+        "filenames_file": "./train_test_inputs/tartanair/tartanair_training_swap_filtered_no_ocean_soulcity.txt",
+        # "filenames_file_prior_map": "./train_test_inputs/removed_bathroom_nyu_extract_train_sparse_depth.txt",
+        "input_height": 480,
+        "input_width": 640,
+        "sparse_feature_height": 480,
+        "sparse_feature_width":680,
+        "data_path_eval": "/",
+        "gt_path_eval": "/",
+        "filenames_file_eval": "./train_test_inputs/tartanair/tartanair_testing_swap_filtered_no_ocean_soulcity_subsampled.txt",
+        # "filenames_file_eval_prior_map": "./train_test_inputs/removed_bathroom_nyu_extract_test_sparse_depth.txt",
+        "min_depth_eval": 0.1,
+        "max_depth_eval": 18.0,
+
+        "do_random_rotate": False,
+        "degree": 1.0,
+        "do_kb_crop": False,
+        "garg_crop": False,
+        "eigen_crop": False,
+        "do_input_resize": True
+
+    },
     "flsea_sparse_feature": {
         "dataset": "flsea_sparse_feature",
         "avoid_boundary": False,
         "min_depth": 0.1,   # flsea dataset, canyons is from 4-7m, red sea is from 3-8m
-        "max_depth": 1.0,
-        #"data_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
-        #"gt_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
-        #"filenames_file": "./train_test_inputs/removed_bathroom_nyu_extract_train_sparse_depth.txt",
+        "max_depth": 18.0,
+        "data_path": "/",
+        "gt_path": "/",
+        "filenames_file": "./train_test_inputs/flsea_training/flsea_training_combined_cleaned_output.txt",
         "input_height": 608,
         "input_width": 968,
 
         "data_path_eval": "/",
         "gt_path_eval": "/",
-        "filenames_file_eval": "./train_test_inputs/new_probability_NPY_flsea_test_with_features.txt",
+        "filenames_file_eval": "./train_test_inputs/flease_testing/FLSea_combined_cleaned_output.txt",
+        # "filenames_file_eval": "./train_test_inputs/flsea_red_sea/pier_path_test_with_matched_features.txt",
+        # "filenames_file_eval": "./train_test_inputs/flease_testing/flsea_red_sea_test_with_matched_features.txt",
         "min_depth_eval": 0.1,
-        "max_depth_eval": 1.0,
+        "max_depth_eval": 10.0,
         "sparse_feature_height": 240,
         "sparse_feature_width":320,
         "do_random_rotate": False,
         "degree": 1.0,
         "do_kb_crop": False,
         "garg_crop": False,
-        "eigen_crop": True,
+        "eigen_crop": False,
         "do_input_resize": True
 
     },
@@ -177,7 +240,7 @@ DATASETS_CONFIG = {
         "dataset": "lizard_sparse_feature",
         "avoid_boundary": False,
         "min_depth": 0.1,   # flsea dataset, canyons is from 4-7m, red sea is from 3-8m
-        "max_depth": 5.0,
+        "max_depth": 10.0,
         #"data_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
         #"gt_path": os.path.join(HOME_DIR, "shortcuts/datasets/nyu_depth_v2/sync/"),
         #"filenames_file": "./train_test_inputs/removed_bathroom_nyu_extract_train_sparse_depth.txt",
@@ -186,11 +249,41 @@ DATASETS_CONFIG = {
 
         "data_path_eval": "/",
         "gt_path_eval": "/",
-        "filenames_file_eval": "./train_test_inputs/prior_map__image_depth_paths.txt",
+        "filenames_file_eval": "./train_test_inputs/lizard/lizard_image_depth_paths.txt",
         "min_depth_eval": 0.1,
         "max_depth_eval": 5.0,
         "sparse_feature_height": 1002,
         "sparse_feature_width":1355,
+        "do_random_rotate": False,
+        "degree": 1.0,
+        "do_kb_crop": False,
+        "garg_crop": False,
+        "eigen_crop": False,
+        "do_input_resize": True
+
+    },
+    "diode_sparse_feature": {
+        "dataset": "diode_sparse_feature",
+        "avoid_boundary": True,
+        "min_depth": 0.6,   # originally 0.1
+        "max_depth": 350,
+        "data_path": "/",
+        "gt_path": "/",
+        "filenames_file": "./train_test_inputs/diode_training_data_with_features.txt",
+        # "filenames_file_prior_map": "./train_test_inputs/removed_bathroom_nyu_extract_train_sparse_depth.txt",
+        "input_height": 768,
+        "input_width": 1024,
+        "sparse_feature_height": 768,
+        "sparse_feature_width":1024,
+        "data_path_eval": "/",
+        "gt_path_eval": "/",
+        "filenames_file_eval": "./train_test_inputs/diode_validating_data_with_features.txt",
+        # "filenames_file_eval_prior_map": "./train_test_inputs/removed_bathroom_nyu_extract_test_sparse_depth.txt",
+        "min_depth_eval": 0.6,
+        "max_depth_eval": 350,
+        "min_depth_diff": -10,
+        "max_depth_diff": 10,
+
         "do_random_rotate": False,
         "degree": 1.0,
         "do_kb_crop": False,
@@ -318,7 +411,7 @@ ALL_EVAL_DATASETS = ALL_INDOOR + ALL_OUTDOOR
 COMMON_TRAINING_CONFIG = {
     "dataset": "nyu",
     "distributed": False,
-    "workers": 16,
+    "workers": 2,
     "clip_grad": 0.1,
     "use_shared_dict": False,
     "shared_dict": None,
@@ -330,7 +423,7 @@ COMMON_TRAINING_CONFIG = {
     "translate_prob": 0.2,
     "max_translation": 100,
 
-    "validate_every": 0.25,
+    "validate_every": 0.5,
     "log_images_every": 0.1,
     "prefetch": False,
 }
@@ -454,10 +547,10 @@ def get_config(model_name, mode='train', dataset=None, **overwrite_kwargs):
     """
 
 
-    check_choices("Model", model_name, ["zoedepth", "zoedepth_nk", 'zoedepth_sparse_feature'])
+    check_choices("Model", model_name, ["zoedepth", "zoedepth_nk", 'zoedepth_sparse_feature', 'zoedepth_sparse_feature_ga', 'zoedepth_sparse_feature_fusion', 'zoedepth_videpth'])
     check_choices("Mode", mode, ["train", "infer", "eval"])
     if mode == "train":
-        check_choices("Dataset", dataset, ["nyu", "kitti", "mix", "nyu_sparse_feature", None])
+        check_choices("Dataset", dataset, ["nyu", "kitti", "mix", "nyu_sparse_feature", "void", "diode_sparse_feature","flsea_sparse_feature",'tartanair', None])
 
     config = flatten({**COMMON_CONFIG, **COMMON_TRAINING_CONFIG})
     config = update_model_config(config, mode, model_name)

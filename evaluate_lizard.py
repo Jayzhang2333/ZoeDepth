@@ -24,6 +24,10 @@
 
 import argparse
 from pprint import pprint
+import torch.nn as nn
+
+import tifffile
+import numpy as np
 
 import torch
 from zoedepth.utils.easydict import EasyDict as edict
@@ -83,6 +87,15 @@ def evaluate(model, test_loader, config, round_vals=True, round_precision=3):
         image, depth = sample['image'], sample['depth']
         image, depth = image.cuda(), depth.cuda()
         sparse_features = sample['sparse_map'].cuda().float() 
+
+        valid_points_mask = (sparse_features >= config.min_depth) & (sparse_features <= config.max_depth)
+
+        # Count the number of valid points within the range
+        valid_points_count = valid_points_mask.sum().item()  # Convert to a Python int
+    
+        if valid_points_count<=3:
+            continue
+
         depth = depth.squeeze().unsqueeze(0).unsqueeze(0)
         focal = sample.get('focal', torch.Tensor(
             [715.0873]).cuda())  # This magic number (focal length) is only used for evaluating BTS model
@@ -104,6 +117,31 @@ def evaluate(model, test_loader, config, round_vals=True, round_precision=3):
             im.save(os.path.join(config.save_images, f"{i}_img.png"))
             Image.fromarray(d).save(os.path.join(config.save_images, f"{i}_depth.png"))
             Image.fromarray(p).save(os.path.join(config.save_images, f"{i}_pred.png"))
+
+
+        # predict_depth = nn.functional.interpolate(
+        #     pred, depth.shape[-2:], mode='bilinear', align_corners=True)
+
+        # predict_depth = predict_depth.squeeze().cpu().numpy()
+        # predict_depth[predict_depth < config.min_depth_eval] = config.min_depth_eval
+        # predict_depth[predict_depth > config.max_depth_eval] = config.max_depth_eval
+        # predict_depth[np.isinf(predict_depth)] = config.max_depth_eval
+        # predict_depth[np.isnan(predict_depth)] = config.min_depth_eval
+
+        # # print(sample['image_path'])
+        # depth_path = sample['image_path'][0].replace('/images/', '/depth_pred/')
+        # tifffile.imwrite(depth_path, predict_depth, dtype=np.float32)
+
+
+
+        # gt_depth = depth.squeeze().cpu().numpy()
+
+        # valid_mask = np.logical_and(
+        #     gt_depth > config.min_depth_eval, gt_depth < config.max_depth_eval)
+
+        # masked_difference = np.where(valid_mask, np.abs(predict_depth - gt_depth), 0)
+        # error_path = sample['image_path'][0].replace('/images/', '/error_map/')
+        # tifffile.imwrite(error_path, masked_difference, dtype=np.float32)
 
 
 

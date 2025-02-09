@@ -147,7 +147,7 @@ class Projector(nn.Module):
         return self._net(x)
     
 class PriorEmbeddingLayer(nn.Module):
-    def __init__(self, in_features=2, embedding_dim = 32, patch_size = 2):
+    def __init__(self, in_features=2, embedding_dim = 32, kernal_size = 2, stride_size = 2):
         """Prior Embedding 
 
         Args:
@@ -161,8 +161,8 @@ class PriorEmbeddingLayer(nn.Module):
             nn.Conv2d(
             in_channels=in_features,
             out_channels=embedding_dim,
-            kernel_size=patch_size,
-            stride=patch_size,
+            kernel_size=kernal_size,
+            stride=stride_size,
             padding=0,
         ),
             nn.ReLU(inplace=True),

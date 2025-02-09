@@ -52,11 +52,149 @@ from .vkitti import get_vkitti_loader
 from .vkitti2 import get_vkitti2_loader
 
 from .preprocess import CropParams, get_white_border, get_black_border
+import matplotlib.pyplot as plt
 
-def generate_feature_map_for_ga(feature_fp, original_height=240, original_width=320, new_height=480, new_width=640):
-    # Read the CSV file
-    df = pd.read_csv(feature_fp)
+# def generate_feature_map_for_ga(feature_fp, original_height=480, original_width=640, new_height=480, new_width=640):
+#     # Read the CSV file
+#     df = pd.read_csv(feature_fp)
 
+#     # Initialize a blank depth map for the new image size with zeros
+#     sparse_depth_map = np.full((new_height, new_width), 0.0, dtype=np.float32)
+
+#     # Calculate scaling factors
+#     scale_y = new_height / original_height
+#     scale_x = new_width / original_width
+
+#     # Iterate through the dataframe and populate the depth map with scaled coordinates
+#     for index, row in df.iterrows():
+#         # Scale pixel coordinates to new image size
+#         pixel_row = int(row['row'] * scale_y)
+#         pixel_col = int(row.get('column', row.get('col', 0)) * scale_x)
+#         depth_value = float(row['depth'])
+
+#         # Ensure the scaled coordinates are within the bounds of the new image size
+#         if 0 <= pixel_row < new_height and 0 <= pixel_col < new_width:
+#             sparse_depth_map[pixel_row, pixel_col] = depth_value
+
+#     # print(np.shape(sparse_depth_map))
+#     # print('data mono')
+#     # print(np.max(sparse_depth_map))
+#     # print(np.min(sparse_depth_map[sparse_depth_map>0]))
+#     sparse_depth_map = sparse_depth_map[..., np.newaxis]
+#     return sparse_depth_map
+def sparsify_feature_map(sparse_feature_map):
+    # Get indices of valid points (nonzero values)
+    valid_indices = np.argwhere(sparse_feature_map > 0)
+
+    # If there are more than 200 valid points, randomly select 200
+    if len(valid_indices) > 200:
+        selected_indices = valid_indices[np.random.choice(len(valid_indices), 200, replace=False)]
+        
+        # Create a new sparse map with zeros
+        new_sparse_map = np.zeros_like(sparse_feature_map)
+        
+        # Assign original values to the selected indices
+        for idx in selected_indices:
+            new_sparse_map[tuple(idx)] = sparse_feature_map[tuple(idx)]
+        
+        return new_sparse_map
+    else:
+        return sparse_feature_map  # Return as is if <= 200 valid points
+    
+
+def filter_lower_33_percent(sparse_feature_map):
+    """
+    sparse_feature_map: 2D NumPy array, where non-zero entries represent valid depth/feature values.
+    We only keep values in the lower 33% of valid entries; everything else becomes zero.
+    """
+    # 1. Extract valid (non-zero) values
+    valid_values = sparse_feature_map[sparse_feature_map > 0]
+    
+    # Edge case: if there are no non-zero entries, just return an array of zeros
+    if valid_values.size == 0:
+        return np.zeros_like(sparse_feature_map)
+    
+    # 2. Find the threshold corresponding to the 33rd percentile of valid values
+    threshold_33 = np.quantile(valid_values, 0.33)  # 0.33 => 33rd percentile
+
+    # 3. Create a mask that keeps only values <= that threshold (and originally non-zero)
+    filtered = np.where((sparse_feature_map > 0) & 
+                        (sparse_feature_map <= threshold_33),
+                        sparse_feature_map,
+                        0)
+    
+    return filtered
+
+
+def resample_sparse_depth(depth_map, new_height, new_width):
+    """
+    Resample a sparse depth map to a new resolution.
+    
+    Parameters
+    ----------
+    depth_map : np.ndarray (H, W)
+        2D array of sparse depth values (0 indicates no depth).
+    new_height : int
+        Desired height for the output.
+    new_width : int
+        Desired width for the output.
+    
+    Returns
+    -------
+    new_depth_map : np.ndarray (new_height, new_width)
+        Resampled sparse depth map. Pixels without any mapped depth will be 0.
+    """
+    old_height, old_width = depth_map.shape
+    
+    # Create arrays to store summed depth and counts in the new resolution
+    new_depth_map = np.zeros((new_height, new_width), dtype=np.float32)
+    new_counts = np.zeros((new_height, new_width), dtype=np.int32)
+    
+    # Find all valid (non-zero) pixels in the original depth map
+    valid_mask = (depth_map != 0)
+    # Get their indices (row = y, col = x)
+    ys, xs = np.where(valid_mask)
+    
+    # Gather depths
+    depths = depth_map[valid_mask]
+    
+    # For each valid pixel, compute its normalized coordinates
+    #   y_frac in [0,1) = y / old_height
+    #   x_frac in [0,1) = x / old_width
+    # Then map to the new image by multiplying:
+    #   new_y = floor(y_frac * new_height)
+    #   new_x = floor(x_frac * new_width)
+    # (We use floor by default with int-casting in Python.)
+    
+    y_fracs = ys / float(old_height)
+    x_fracs = xs / float(old_width)
+    
+    # Compute new indices
+    new_ys = (y_fracs * new_height).astype(np.int32)
+    new_xs = (x_fracs * new_width).astype(np.int32)
+    
+    # Accumulate depth values in the new resolution
+    for y_new, x_new, depth_val in zip(new_ys, new_xs, depths):
+        new_depth_map[y_new, x_new] += depth_val
+        new_counts[y_new, x_new] += 1
+    
+    # Average out pixels where more than one old pixel landed
+    nonzero_mask = (new_counts > 0)
+    new_depth_map[nonzero_mask] /= new_counts[nonzero_mask]
+    
+    return new_depth_map
+
+def generate_feature_map_for_ga(feature_fp, original_height=480, original_width=640, new_height=384, new_width=512):
+    # Check the file extension to determine the delimiter
+    file_extension = os.path.splitext(feature_fp)[-1].lower()
+    
+    if file_extension == '.csv':
+        df = pd.read_csv(feature_fp)
+    elif file_extension == '.txt':
+        df = pd.read_csv(feature_fp, delimiter=' ', header=0, names=['row', 'column', 'depth'])
+    else:
+        raise ValueError("Unsupported file format. Only CSV and TXT files are supported.")
+    
     # Initialize a blank depth map for the new image size with zeros
     sparse_depth_map = np.full((new_height, new_width), 0.0, dtype=np.float32)
 
@@ -75,11 +213,8 @@ def generate_feature_map_for_ga(feature_fp, original_height=240, original_width=
         if 0 <= pixel_row < new_height and 0 <= pixel_col < new_width:
             sparse_depth_map[pixel_row, pixel_col] = depth_value
 
-    # print(np.shape(sparse_depth_map))
-    # print('data mono')
-    # print(np.max(sparse_depth_map))
-    # print(np.min(sparse_depth_map[sparse_depth_map>0]))
     sparse_depth_map = sparse_depth_map[..., np.newaxis]
+    # print(np.shape(sparse_depth_map))
     return sparse_depth_map
 
 
@@ -96,11 +231,32 @@ def get_distance_maps(height, width, idcs_height, idcs_width):
     
     return dist_maps
 
-def get_probability_maps(distance_maps):
-    """Convert pixel distance to probability."""
-    max_dist = np.sqrt(distance_maps.shape[-2] ** 2 + distance_maps.shape[-1] ** 2)
-    probabilities = np.exp(-distance_maps / max_dist)
-    return probabilities
+# def get_probability_maps(distance_maps):
+#     """Convert pixel distance to probability."""
+#     max_dist = np.sqrt(distance_maps.shape[-2] ** 2 + distance_maps.shape[-1] ** 2)
+#     probabilities = np.exp(-distance_maps / max_dist)
+#     return probabilities
+from scipy.stats import norm
+def get_probability_maps(dist_map):
+    """Takes a Nx1xHxW distance map as input and outputs a probability map.
+    Pixels with small distance to closest keypoint have high probability and vice versa."""
+
+    # Normal distribution parameters
+    loc = 0.0
+    scale_param = 10.0
+
+    # Normal distribution scaling factor to ensure prob=1 at dist=0
+    distribution = norm(loc=loc, scale=scale_param)
+    scale = np.exp(distribution.logpdf(0))  # Calculate scale factor for normalization
+
+    # Prior probability for every pixel
+    prob_map = np.exp(distribution.logpdf(dist_map)) / scale
+
+    # Uncomment below for exponential distribution alternative
+    # r = 0.05  # rate
+    # prob_map = np.exp(-r * dist_map)  # prior=1 at dist=0 without multiplying by r
+
+    return prob_map
 
 def get_depth_prior_from_features(features, prior_channels, height=240, width=320):
     """Takes lists of pixel indices and their respective depth probes and
@@ -194,9 +350,10 @@ def load_features_from_csv(csv_file):
 
     return np.array(features)
 
+
 def load_features_from_npy(npy_file):
     data = np.load(npy_file)
-    data[:,:,0] = data[:,:,0]/1.44
+    # data[:,:,0] = data[:,:,0]/1.44
     return data
 
 
@@ -208,9 +365,9 @@ def _is_numpy_image(img):
     return isinstance(img, np.ndarray) and (img.ndim in {2, 3})
 
 
-def preprocessing_transforms(mode, **kwargs):
+def preprocessing_transforms(mode, use_ga, **kwargs):
     return transforms.Compose([
-        ToTensor(mode=mode, **kwargs)
+        ToTensor(mode=mode, use_ga = use_ga,  **kwargs)
     ])
 
 
@@ -247,10 +404,11 @@ class DepthDataLoader(object):
                 data_dir_root=config.diml_outdoor_root, batch_size=1, num_workers=1)
             return
 
-        if "diode" in config.dataset:
-            self.data = get_diode_loader(
-                config[config.dataset+"_root"], batch_size=1, num_workers=1)
-            return
+        # original training with diode
+        # if "diode" in config.dataset:
+        #     self.data = get_diode_loader(
+        #         config[config.dataset+"_root"], batch_size=1, num_workers=1)
+        #     return
 
         if config.dataset == 'hypersim_test':
             self.data = get_hypersim_loader(
@@ -279,7 +437,11 @@ class DepthDataLoader(object):
         if transform is None:
             # print("transform is none")
             # print(img_size)
-            transform = preprocessing_transforms(mode, size=img_size)
+            if config.name == 'ZoeDepth_sparse_feature_ga':
+                use_ga = True
+            else:
+                use_ga = False
+            transform = preprocessing_transforms(mode, use_ga, size=img_size)
 
         if mode == 'train':
 
@@ -293,6 +455,8 @@ class DepthDataLoader(object):
             else:
                 self.train_sampler = None
 
+            print(f'number of workers actually used: {config.workers}')
+            
             self.data = DataLoader(self.training_samples,
                                    batch_size=config.batch_size,
                                    shuffle=(self.train_sampler is None),
@@ -471,7 +635,8 @@ class DataLoadPreprocess(Dataset):
         sample_path = self.filenames[idx]
         # print(sample_path)
         if len(sample_path.split()) > 3:
-            focal = float(sample_path.split()[2])
+            # focal = float(sample_path.split()[2])
+            focal = 500
         else:
             focal = 500 #give a dummy value
         sample = {}
@@ -493,10 +658,54 @@ class DataLoadPreprocess(Dataset):
             image = self.reader.open(image_path)
             # sparse feature map is numpy array
             # sparse_feature_map = generate_sparse_feature_map(featrue_path, self.config.prior_channels, self.config.sparse_feature_height, self.config.sparse_feature_width)
-            sparse_feature_map = generate_sparse_feature_map_npy(feature_path, self.config.prior_channels)
-            # sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=480, original_width=640, new_height=480, new_width=640)
+            
+            #at this stage, the input sparse map is still numpy
+            if self.config.name == 'ZoeDepth_sparse_feature_ga' and  (feature_path.lower().endswith('.csv') or feature_path.lower().endswith('.txt')):
+                # print(f"input height {self.config.input_height}, input width: {self.config.input_width}")
+                # sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=288, new_width=384)
+                sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=self.config.input_height, new_width=self.config.input_width)
+                # sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
+            elif (self.config.name == 'ZoeDepth_sparse_feature_fusion' or self.config.name == 'ZoeDepth_videpth') and  (feature_path.lower().endswith('.csv') or feature_path.lower().endswith('.txt')):
+
+                sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=288, new_width=384)
+                if random.random() < 0.3:
+                    # print("train with lower 1/3")
+                    sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
+                # sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
+            elif feature_path.lower().endswith('.png'):
+                # print('sparse points divide by 256')
+                sparse_feature_map = np.asarray(self.reader.open(feature_path))/256.0
+                # plt.imshow(sparse_feature_map, cmap='viridis')  # Use 'viridis' or any other colormap you prefer
+                # plt.colorbar(label='Depth')  # Optional: Adds a color bar for reference
+                # plt.title("Int Depth Visualization")
+                # plt.show()
+                sparse_feature_map = resample_sparse_depth(sparse_feature_map,288,384)
+                # print('filtering sparse depth')
+                if random.random() < 0.3:
+                    sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
+                sparse_feature_map = sparse_feature_map[..., np.newaxis]
+                # print(f"sparse feature shape when just loaded: {np.shape(sparse_feature_map)}")
+                
+            else:
+                sparse_feature_map = generate_sparse_feature_map_npy(feature_path, self.config.prior_channels)
+            # 
             # print(np.shape(sparse_feature_map))
-            depth_gt = self.reader.open(depth_path)
+
+            # other dataset 's appraoch to read gt
+            if self.config.dataset == 'diode_sparse_feature':
+                depth_gt = np.load(depth_path)
+                ground_truth_valid_path = depth_path.replace('depth.npy', 'depth_mask.npy')
+                depth_mask = np.load(ground_truth_valid_path)
+                # depth_mask = depth_mask.squeeze(axis=2)
+                depth_gt = depth_gt.squeeze(axis=2)
+            elif self.config.dataset == 'tartanair':
+                depth_gt = np.load(depth_path)
+                # print(np.shape(depth_gt))
+                # depth_gt = depth_gt.squeeze(axis=2)
+            else:
+                depth_gt = self.reader.open(depth_path)
+            
+            
             w, h = image.size
 
             if self.config.do_kb_crop:
@@ -547,11 +756,19 @@ class DataLoadPreprocess(Dataset):
             image = np.asarray(image, dtype=np.float32) / 255.0
             # sparse_feature_map = np.asarray(sparse_feature_map, dtype=np.float32)
             depth_gt = np.asarray(depth_gt, dtype=np.float32)
+            # plt.imshow(depth_gt/256.0, cmap='viridis')  # Use 'viridis' or any other colormap you prefer
+            # plt.colorbar(label='Depth')  # Optional: Adds a color bar for reference
+            # plt.title("Int Depth Visualization")
+            # plt.show()
             depth_gt = np.expand_dims(depth_gt, axis=2)
 
             if self.config.dataset == 'nyu' or self.config.dataset == 'nyu_sparse_feature':
                 depth_gt = depth_gt / 1000.0
+            
+            elif self.config.dataset == 'diode_sparse_feature' or self.config.dataset == 'tartanair'  or self.config.dataset == 'flsea_sparse_feature':
+                depth_gt = depth_gt / 1.0
             else:
+                # print('GT divide by 256')
                 depth_gt = depth_gt / 256.0
 
             if self.config.aug and (self.config.random_crop):
@@ -565,6 +782,8 @@ class DataLoadPreprocess(Dataset):
             image, sparse_feature_map, depth_gt = self.train_preprocess(image, sparse_feature_map, depth_gt)
             mask = np.logical_and(depth_gt > self.config.min_depth,
                                   depth_gt < self.config.max_depth).squeeze()[None, ...]
+            
+            #until now, data is still numpy
             sample = {'image': image, 'sparse_map': sparse_feature_map , 'depth': depth_gt, 'focal': focal,
                       'mask': mask, **sample}
 
@@ -587,15 +806,48 @@ class DataLoadPreprocess(Dataset):
                                dtype=np.float32) / 255.0
 
             # sparse_feature_map = generate_sparse_feature_map(feature_path, self.config.prior_channels, self.config.sparse_feature_height, self.config.sparse_feature_width)
-            sparse_feature_map = generate_sparse_feature_map_npy(feature_path, self.config.prior_channels)
+            # sparse_feature_map = generate_sparse_feature_map_npy(feature_path, self.config.prior_channels)
             # sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=480, original_width=640, new_height=480, new_width=640)
+            if self.config.name == 'ZoeDepth_sparse_feature_ga' and  (feature_path.lower().endswith('.csv') or feature_path.lower().endswith('.txt')):
+                # print(f"input height {self.config.input_height}, input width: {self.config.input_width}")
+                # sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=288, new_width=384)
+                sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=self.config.input_height, new_width=self.config.input_width)
+                sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
+            
+            elif (self.config.name == 'ZoeDepth_sparse_feature_fusion' or self.config.name == 'ZoeDepth_videpth') and  (feature_path.lower().endswith('.csv') or feature_path.lower().endswith('.txt')):
+                sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=288, new_width=384)
+                # sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
+                
+            
+            elif feature_path.lower().endswith('.png'):
+                sparse_feature_map = np.asarray(self.reader.open(feature_path))/256.0
+                sparse_feature_map = resample_sparse_depth(sparse_feature_map,288,384)
+                # print('filtering sparse depth')
+                sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
+                # sparse_feature_map[sparse_feature_map>1] = 0
+                sparse_feature_map = sparse_feature_map[..., np.newaxis]
+            else:
+                sparse_feature_map = generate_sparse_feature_map_npy(feature_path, self.config.prior_channels)
+                
+            
             if self.mode == 'online_eval':
                 gt_path = self.config.gt_path_eval
                 depth_path = os.path.join(
                     gt_path, remove_leading_slash(sample_path.split()[1]))
                 has_valid_depth = False
                 try:
-                    depth_gt = self.reader.open(depth_path)
+                    # original approach to read GT
+                    # depth_gt = self.reader.open(depth_path)
+
+                    if self.config.dataset == 'diode_sparse_feature' :
+                        depth_gt = np.load(depth_path)
+                        depth_gt = depth_gt.squeeze(axis=2)
+                    elif self.config.dataset == 'tartanair':
+                        depth_gt = np.load(depth_path)
+                        
+                    else:
+                        depth_gt = self.reader.open(depth_path)
+
                     has_valid_depth = True
                 except IOError:
                     depth_gt = False
@@ -607,7 +859,7 @@ class DataLoadPreprocess(Dataset):
                     
                     if self.config.dataset == 'nyu' or self.config.dataset == 'nyu_sparse_feature':
                         depth_gt = depth_gt / 1000.0
-                    elif self.config.dataset == "flsea_sparse_feature" or self.config.dataset == "lizard_sparse_feature":
+                    elif self.config.dataset == "flsea_sparse_feature" or self.config.dataset == "lizard_sparse_feature" or self.config.dataset == 'diode_sparse_feature' or self.config.dataset == 'tartanair':
                         depth_gt = depth_gt / 1.0
 
                     else:
@@ -752,12 +1004,15 @@ class DataLoadPreprocess(Dataset):
 
 
 class ToTensor(object):
-    def __init__(self, mode, do_normalize=False, size=None):
+    def __init__(self, mode, do_normalize=False, size=None, use_ga = False):
         self.mode = mode
+        self.use_ga = use_ga
         self.normalize = transforms.Normalize(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) if do_normalize else nn.Identity()
+        self.sparse_depth_mean = 1.6908
+        self.sparse_depth_std = 0.7952
         self.size = size
-        # print(size)
+        print(size)
         if size is not None:
             # print("size is not none")
             self.resize = transforms.Resize(size=size)
@@ -767,9 +1022,11 @@ class ToTensor(object):
 
     def __call__(self, sample):
         image, focal, sparse_feature_map = sample['image'], sample['focal'],sample['sparse_map']
+        # print(f"image shape before to tensor {np.shape(image)}")
         image = self.to_tensor(image)
         image = self.normalize(image)
         image = self.resize(image)
+        # print(f"image shape after to tensor {image.shape}")
 
         # print(f"image shape after to tensor: {image.shape}")
 
@@ -777,16 +1034,18 @@ class ToTensor(object):
         # print(f"sparse feature map before resize and totensor {sparse_feature_map.shape}")
         # to tesnor handles both PIL image and numpy array
         
-
+        # sparse_feature_map[sparse_feature_map>0] = (sparse_feature_map[sparse_feature_map>0] - self.sparse_depth_mean) / self.sparse_depth_std
+        # print(f"sparse_feature_map shape before to tensor {np.shape(sparse_feature_map)}")
         sparse_feature_map = self.to_tensor(sparse_feature_map)
+        # print(f"sparse_feature_map shape after to tensor {sparse_feature_map.shape}")
 
         # print('before resize')
         # print(torch.max(sparse_feature_map))
         # print(torch.min(sparse_feature_map[sparse_feature_map>0]))
         # print(sparse_feature_map.shape)
 
-        
-        sparse_feature_map = self.resize(sparse_feature_map)
+        # if not self.use_ga:
+        #     sparse_feature_map = self.resize(sparse_feature_map)
 
         # sparse_feature_map = sparse_feature_map.unsqueeze(1)
         # sparse_feature_map = nn.functional.interpolate(

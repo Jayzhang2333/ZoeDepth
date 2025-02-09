@@ -42,6 +42,45 @@ import torch.nn as nn
 import torch.utils.data.distributed
 from PIL import Image
 from torchvision.transforms import ToTensor
+import matplotlib.pyplot as plt
+
+class NormalAverage:
+    """A class that computes the normal (simple) average."""
+    def __init__(self):
+        self.total = 0
+        self.count = 0
+
+    def append(self, value):
+        self.total += value
+        self.count += 1
+
+    def get_value(self):
+        if self.count == 0:
+            return 0  # Return 0 or None if no values have been added
+        return self.total / self.count
+
+
+class NormalAverageDict:
+    """A dictionary of normal averages."""
+    def __init__(self):
+        self._dict = None
+
+    def update(self, new_dict):
+        if new_dict is None:
+            return
+
+        if self._dict is None:
+            self._dict = dict()
+            for key, value in new_dict.items():
+                self._dict[key] = NormalAverage()
+
+        for key, value in new_dict.items():
+            self._dict[key].append(value)
+
+    def get_value(self):
+        if self._dict is None:
+            return None
+        return {key: value.get_value() for key, value in self._dict.items()}
 
 
 class RunningAverage:
@@ -155,6 +194,36 @@ def colorize(value, vmin=None, vmax=None, cmap='gray_r', invalid_val=-99, invali
 def count_parameters(model, include_all=False):
     return sum(p.numel() for p in model.parameters() if p.requires_grad or include_all)
 
+# import numpy as np
+
+def rmse_silog(predicted, ground_truth):
+    """
+    Computes the RMSE_silog as described in the provided formula.
+
+    Parameters:
+    - predicted: np.array, predicted depth values (N,)
+    - ground_truth: np.array, ground truth depth values (N,)
+
+    Returns:
+    - rmse_silog: scalar, RMSE_silog error
+    """
+    # Ensure no division by zero or log of zero
+    epsilon = 1e-8
+    predicted = np.maximum(predicted, epsilon)
+    ground_truth = np.maximum(ground_truth, epsilon)
+
+    # Compute log values
+    log_predicted = np.log(predicted)
+    log_ground_truth = np.log(ground_truth)
+
+    # Compute alpha
+    N = len(predicted)
+    alpha = np.sum(log_ground_truth - log_predicted) / N
+
+    # Compute RMSE_silog
+    rmse_silog = np.sqrt(np.mean((log_predicted - log_ground_truth + alpha) ** 2))
+
+    return rmse_silog
 
 def compute_errors(gt, pred):
     """Compute metrics for 'pred' compared to 'gt'
@@ -194,8 +263,12 @@ def compute_errors(gt, pred):
     rmse_log = (np.log(gt) - np.log(pred)) ** 2
     rmse_log = np.sqrt(rmse_log.mean())
 
-    err = np.log(pred) - np.log(gt)
-    silog = np.sqrt(np.mean(err ** 2) - np.mean(err) ** 2) * 100
+    # err = np.log(pred) - np.log(gt)
+    # silog = np.sqrt(np.mean(err ** 2) - np.mean(err) ** 2) * 100
+
+    silog = rmse_silog(pred, gt)
+
+
 
     log_10 = (np.abs(np.log10(gt) - np.log10(pred))).mean()
     return dict(a1=a1, a2=a2, a3=a3, abs_rel=abs_rel, rmse=rmse, log_10=log_10, rmse_log=rmse_log,
@@ -223,9 +296,14 @@ def compute_metrics(gt, pred, interpolate=True, garg_crop=False, eigen_crop=True
     pred[np.isnan(pred)] = min_depth_eval
 
     gt_depth = gt.squeeze().cpu().numpy()
+
+    
+    
+
     valid_mask = np.logical_and(
         gt_depth > min_depth_eval, gt_depth < max_depth_eval)
 
+    # print(config.dataset)
     if garg_crop or eigen_crop:
         gt_height, gt_width = gt_depth.shape
         eval_mask = np.zeros(valid_mask.shape)
@@ -233,13 +311,18 @@ def compute_metrics(gt, pred, interpolate=True, garg_crop=False, eigen_crop=True
         if garg_crop:
             eval_mask[int(0.40810811 * gt_height):int(0.99189189 * gt_height),
                       int(0.03594771 * gt_width):int(0.96405229 * gt_width)] = 1
-
+        
         elif eigen_crop:
             # print("-"*10, " EIGEN CROP ", "-"*10)
-            if dataset == 'kitti':
+            if config.dataset == 'kitti':
                 eval_mask[int(0.3324324 * gt_height):int(0.91351351 * gt_height),
                           int(0.0359477 * gt_width):int(0.96405229 * gt_width)] = 1
+                
+            elif config.dataset == 'lizard_sparse_feature' or config.dataset == 'flsea_sparse_feature':
+                # print("yes")
+                eval_mask[:,int(0 * gt_width):int(0.9 * gt_width)] = 1
             else:
+                # print("no")
                 # assert gt_depth.shape == (480, 640), "Error: Eigen crop is currently only valid for (480, 640) images"
                 eval_mask[45:471, 41:601] = 1
         else:
@@ -248,6 +331,11 @@ def compute_metrics(gt, pred, interpolate=True, garg_crop=False, eigen_crop=True
     else:
         eval_mask = np.ones(valid_mask.shape)
     valid_mask = np.logical_and(valid_mask, eval_mask)
+
+    
+
+   
+
     return compute_errors(gt_depth[valid_mask], pred[valid_mask])
 
 
