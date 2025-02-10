@@ -107,11 +107,13 @@ class BaseTrainer:
                     f"Model {m.__class__.__name__} does not implement get_lr_params. Please implement it or use the same LR for all parameters.")
 
             params = m.get_lr_params(self.config.lr)
-
+            # lrs = [l['lr'] for l in params]
+            # print(lrs)
         return optim.AdamW(params, lr=self.config.lr, weight_decay=self.config.wd)
 
     def init_scheduler(self):
         lrs = [l['lr'] for l in self.optimizer.param_groups]
+        
         return optim.lr_scheduler.OneCycleLR(self.optimizer, lrs, epochs=self.config.epochs, steps_per_epoch=len(self.train_loader),
                                              cycle_momentum=self.config.cycle_momentum,
                                              base_momentum=0.85, max_momentum=0.95, div_factor=self.config.div_factor, final_div_factor=self.config.final_div_factor, pct_start=self.config.pct_start, three_phase=self.config.three_phase)
@@ -180,6 +182,13 @@ class BaseTrainer:
                 wandb.log({"Epoch": epoch}, step=self.step)
             pbar = tqdm(enumerate(self.train_loader), desc=f"Epoch: {epoch + 1}/{self.config.epochs}. Loop: Train",
                         total=self.iters_per_epoch) if is_rank_zero(self.config) else enumerate(self.train_loader)
+            
+            
+            # for i, param_group in enumerate(self.optimizer.param_groups):
+            #     group_name = param_group.get('name', f'Group {i}')  # Default to 'Group {i}' if no name is set
+            #     current_lr = param_group['lr']
+            #     print(f"Epoch {epoch+1}, {group_name}: Learning Rate = {current_lr:.8f}")
+
             for i, batch in pbar:
                 if self.should_early_stop():
                     print("Early stopping")

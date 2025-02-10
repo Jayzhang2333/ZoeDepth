@@ -398,6 +398,7 @@ class ZoeDepth_sparse_feature_fusion(DepthModel):
         Returns:
             list : list of parameters to optimize and their learning rates, in the format required by torch optimizers.
         """
+        # print(lr)
         param_conf = []
         if self.train_midas:
             if self.encoder_lr_factor > 0:
@@ -415,6 +416,7 @@ class ZoeDepth_sparse_feature_fusion(DepthModel):
 
         remaining_modules = []
         for name, child in self.named_children():
+            # print(name)
             if name != 'core':
                 remaining_modules.append(child)
         remaining_params = itertools.chain(
