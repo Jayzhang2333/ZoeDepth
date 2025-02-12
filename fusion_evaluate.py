@@ -60,7 +60,7 @@ def infer(model, images, sparse_features, config, **kwargs):
     pred1 = model(images,sparse_feature=sparse_features, input_height = config.input_height, input_width = config.input_width, **kwargs)
     # rel_1 = pred1['rel'].squeeze().cpu().numpy()
     pred1 = get_depth_from_prediction(pred1)
-    # return pred1
+    return pred1
 
     pred2 = model(torch.flip(images, [3]), sparse_feature=torch.flip(sparse_features, [3]), input_height = config.input_height, input_width = config.input_width, **kwargs)
     # rel_2 = pred2['rel'].squeeze().cpu().numpy()
