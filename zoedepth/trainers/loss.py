@@ -37,6 +37,60 @@ def extract_key(prediction, key):
         return prediction[key]
     return prediction
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class NegativeLogLikelihoodLoss(nn.Module):
+    """
+    Negative Log Likelihood Loss for a regression task with uncertainty estimation.
+    
+    This loss function assumes that the network outputs two separate predictions:
+        - depth_pred: the predicted depth (mean), μ.
+        - uncertainty_pred: the predicted log variance, s = log(σ^2).
+    
+    The per-pixel loss is computed as:
+    
+        loss = 0.5 * exp(-s) * (y - μ)^2 + 0.5 * s
+        
+    Optionally, a binary mask can be provided to select valid pixels only.
+    """
+    def __init__(self) -> None:
+        super(NegativeLogLikelihoodLoss, self).__init__()
+        self.name = "NegativeLogLikelihoodLoss"
+
+    def forward(self, depth_pred, uncertainty_pred, target, mask=None, interpolate=True):
+        """
+        Parameters:
+            depth_pred (torch.Tensor): Predicted depth (mean), shape (N, 1, H_pred, W_pred).
+            uncertainty_pred (torch.Tensor): Predicted log variance, shape (N, 1, H_pred, W_pred).
+            target (torch.Tensor): Ground truth depth, shape (N, 1, H, W).
+            mask (torch.Tensor, optional): Binary mask to specify valid pixels. Shape (N, 1, H, W).
+            interpolate (bool, optional): Whether to interpolate predictions to the target size if needed.
+        Returns:
+            torch.Tensor: The computed loss (scalar).
+        """
+        # Interpolate depth prediction if its spatial dimensions don't match the target.
+        if interpolate and depth_pred.shape[-1] != target.shape[-1]:
+            depth_pred = F.interpolate(depth_pred, size=target.shape[-2:], mode='bilinear', align_corners=True)
+        
+        # Interpolate uncertainty prediction if necessary.
+        if interpolate and uncertainty_pred.shape[-1] != target.shape[-1]:
+            uncertainty_pred = F.interpolate(uncertainty_pred, size=target.shape[-2:], mode='bilinear', align_corners=True)
+        
+        # Compute the per-pixel negative log likelihood loss.
+        loss = 0.5 * torch.exp(-uncertainty_pred) * (target - depth_pred) ** 2 + 0.5 * uncertainty_pred
+
+        # If a mask is provided, compute the masked average loss.
+        if mask is not None:
+            loss = loss * mask
+            loss = loss.sum() / (mask.sum() + 1e-8)
+        else:
+            loss = loss.mean()
+
+        return loss
+
+
 
 class L1SmoothLoss(nn.Module):
     """Root Mean Squared Error (RMSE)"""

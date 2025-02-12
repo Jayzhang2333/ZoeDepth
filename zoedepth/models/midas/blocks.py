@@ -258,7 +258,7 @@ class OutputConv(nn.Module):
             nn.Conv2d(features, features//2, kernel_size=3, stride=1, padding=1, groups=groups),
             nn.Upsample(scale_factor=2, mode="bilinear"),
             nn.Conv2d(features//2, 32, kernel_size=3, stride=1, padding=1),
-            # activation,
+            # activation, # originally, this is an input activation function, not the leakyrelu below
             nn.LeakyReLU(0.2, inplace = False),
             nn.Conv2d(32, 1, kernel_size=1, stride=1, padding=0),
             nn.ReLU(True) if non_negative else nn.Identity(),
@@ -267,6 +267,37 @@ class OutputConv(nn.Module):
 
     def forward(self, x):        
         return self.output_conv(x)
+    
+class DepthUncertaintyHead(nn.Module):
+    def __init__(self, features, groups, activation, non_negative):
+        super(DepthUncertaintyHead, self).__init__()
+        
+        # Head for the per-pixel scale correction factor (depth output)
+        self.depth_head = nn.Sequential(
+            nn.Conv2d(features, features//2, kernel_size=3, stride=1, padding=1, groups=groups),
+            nn.Upsample(scale_factor=2, mode="bilinear"),
+            nn.Conv2d(features//2, 32, kernel_size=3, stride=1, padding=1),
+            # activation, # originally, this is an input activation function, not the leakyrelu below
+            nn.LeakyReLU(0.2, inplace = False),
+            nn.Conv2d(32, 1, kernel_size=1, stride=1, padding=0),
+            nn.ReLU(True) if non_negative else nn.Identity(),
+            nn.Identity(),
+        )
+        
+        # Head for the uncertainty map output
+        self.uncertainty_head = nn.Sequential(
+            nn.Conv2d(features, features // 2, kernel_size=3, stride=1, padding=1, groups=groups),
+            nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
+            nn.Conv2d(features // 2, 32, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(0.2, inplace=False),
+            nn.Conv2d(32, 1, kernel_size=1, stride=1, padding=0),
+            nn.Softplus()  # alternative to ReLU; outputs are strictly positive
+        )
+    
+    def forward(self, x):
+        depth = self.depth_head(x)
+        uncertainty = self.uncertainty_head(x)
+        return depth, uncertainty
     
 
 def weights_init(m):

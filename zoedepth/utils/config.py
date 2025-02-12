@@ -547,7 +547,7 @@ def get_config(model_name, mode='train', dataset=None, **overwrite_kwargs):
     """
 
 
-    check_choices("Model", model_name, ["zoedepth", "zoedepth_nk", 'zoedepth_sparse_feature', 'zoedepth_sparse_feature_ga', 'zoedepth_sparse_feature_fusion', 'zoedepth_videpth'])
+    check_choices("Model", model_name, ["zoedepth", "zoedepth_nk", 'zoedepth_sparse_feature', 'zoedepth_sparse_feature_ga', 'zoedepth_sparse_feature_fusion', 'zoedepth_videpth', 'zoedepth_geometry'])
     check_choices("Mode", mode, ["train", "infer", "eval"])
     if mode == "train":
         check_choices("Dataset", dataset, ["nyu", "kitti", "mix", "nyu_sparse_feature", "void", "diode_sparse_feature","flsea_sparse_feature",'tartanair', None])
