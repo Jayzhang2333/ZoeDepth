@@ -1,0 +1,1 @@
+/media/jay/Seagate/Tartanair/office/Easy/P003/image_left/000377_left.png /media/jay/Seagate/Tartanair/office/Easy/P003/depth_left/000377_left_depth.npy /media/jay/Seagate/Tartanair/office/Easy/P003/image_left/000377_left_features_filtered.txt

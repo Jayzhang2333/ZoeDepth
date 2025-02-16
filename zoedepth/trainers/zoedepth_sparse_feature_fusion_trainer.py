@@ -149,9 +149,9 @@ class Trainer(BaseTrainer):
                 intermedian_pred_depths, depths_gt, mask=mask, interpolate=True)
 
             if self.dataset == 'tartanair':
-                loss = self.config.w_l1smooth*l_l1smooth + self.config.w_si*l_si + self.config.w_rmse*l_rmse + self.config.w_si*l_si_intermedian + self.config.w_rmse*l_rmse_intermedian
+                loss = self.config.w_l1smooth*l_l1smooth + self.config.w_si*l_si + self.config.w_rmse*l_rmse + self.config.w_si_intermedian*l_si_intermedian + self.config.w_rmse_intermedian*l_rmse_intermedian
             else:
-                loss = self.config.w_si*l_si + self.config.w_rmse * l_rmse + self.config.w_si * l_si_intermedian + self.config.w_rmse * l_rmse_intermedian
+                loss = self.config.w_si*l_si + self.config.w_rmse * l_rmse + self.config.w_si_intermedian * l_si_intermedian + self.config.w_rmse_intermedian * l_rmse_intermedian
             losses[self.silog_loss.name] = l_si
             losses[self.rmse_loss.name] = l_rmse
 

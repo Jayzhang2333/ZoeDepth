@@ -227,8 +227,8 @@ def get_sparse_pool(dep, num):
         masks.append(m)
         depths.append(dep)
     
-    # for i in range(num+1):
-    #     depths[i][~masks[i]] = 1
+    for i in range(num+1):
+        depths[i][~masks[i]] = 1
 
     return masks, depths
 
@@ -370,15 +370,21 @@ class ZoeDepth_sparse_feature_fusion(DepthModel):
         rel_depth = rel_depth.unsqueeze(1)
         scale_depth_residual = scale_residual_list[-1]
         scale_depth_residual_mask = scale_residual_mask_list[-1]
-        rgb_and_reltive_depth = torch.cat([rel_depth, out[0]], dim=1)
+        residual_and_mask = torch.cat([scale_depth_residual, scale_depth_residual_mask], dim=1)
+        # rgb_and_reltive_depth = torch.cat([rel_depth, out[0]], dim=1)
+        # rgb_and_reltive_depth = torch.cat([rel_depth.clone(), scale_depth_residual_mask], dim=1)
+        # rgb_and_reltive_depth = rel_depth.clone()
+        # ga_and_reltive_depth = torch.cat([ga_result, rel_depth], dim=1)
 
         # count_not_equal_to_one = (scale_depth_residual != 1).sum()
         # print(count_not_equal_to_one)  # tensor(3)
         # count_not_equal_to_zero = (scale_depth_residual_mask != 0).sum()
         # print(count_not_equal_to_zero)  # tensor(3)
         # show_images_three_sources(rel_depth, scale_depth_residual, x)
-        pred, scales, intermedian_pred = self.ScaleMapLearner(scale_depth_residual,rgb_and_reltive_depth, ga_result, scale_residual_list[1:-1])
-
+        # pred, scales, intermedian_pred = self.ScaleMapLearner(residual_and_mask,rgb_and_reltive_depth, ga_result, scale_residual_list[1:-1], scale_depth_residual_mask)
+        pred, scales, intermedian_pred = self.ScaleMapLearner(scale_depth_residual,ga_result, ga_result, scale_depth_residual_mask)
+        # show_images(scale_depth_residual)
+        # pred, scales = self.ScaleMapLearner(scale_depth_residual,rgb_and_reltive_depth, ga_result, scale_residual_list[1:-1])
 
         output = dict(metric_depth=1.0/pred)
         output['intermedian_pred'] = 1.0/intermedian_pred

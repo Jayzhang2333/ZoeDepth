@@ -66,7 +66,7 @@ def _make_pretrained_efficientnet_lite3(use_pretrained, exportable=False):
         "tf_efficientnet_lite3",
         pretrained=use_pretrained,
         exportable=exportable,
-        in_chans=32
+        in_chans=33
     )
     return _make_efficientnet_backbone(efficientnet)
 

@@ -9,7 +9,7 @@ from torch.nn import functional as F
 
 from .base_model import BaseModel
 from .blocks import FeatureFusionBlock_custom, _make_encoder, OutputConv, FeatureFusionBlock_mine, FeatureFusionBlock_custom_original, _make_encoder_original, DepthUncertaintyHead
-from zoedepth.models.layers.fusion_layers import FillConv, EstimateAndPlaceModule
+from zoedepth.models.layers.fusion_layers import FillConv, PyramidVisionTransformer, conv_bn_relu, BasicBlock
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -72,19 +72,33 @@ class MidasNet_small_videpth(BaseModel):
             features4=features*8
 
         # self.first = nn.Sequential(
-        #     nn.Conv2d(in_channels, 3, kernel_size=3, stride=1, padding=1),
+        #     nn.Conv2d(2, 3, kernel_size=3, stride=1, padding=1),
         #     nn.BatchNorm2d(3),
         #     nn.ReLU(inplace=True)
         # )
         # self.first.apply(weights_init)
 
-        self.SFFM = FillConv(20)
+        # self.SFFM = FillConv(20)
+
+        self.conv1_rel = conv_bn_relu(1, 16, kernel=3, stride=1, padding=1,
+                                          bn=False)
+        self.conv1_dep = conv_bn_relu(1, 16, kernel=3, stride=1, padding=1,
+                                          bn=False)
+        self.conv1 = conv_bn_relu(32, 32, kernel=3, stride=1, padding=1,
+                                      bn=False)
+        
+        self.conv_atten = BasicBlock(32, 32, ratio=4)
+        
+       
+        
         self.d_conv = nn.Sequential(
-                nn.Conv2d(32, 32, 1, 1, 0),
+                nn.Conv2d(32, 16, 1, 1, 0),
                 nn.LeakyReLU(0.2, inplace=True),
-                nn.Conv2d(32, 1, 1, 1, 0),
+                nn.Conv2d(16, 1, 1, 1, 0),
                 nn.ReLU(True), #should use identity
             )
+        
+        
         
 
         self.pretrained, self.scratch = _make_encoder(self.backbone, features, use_pretrained, groups=self.groups, expand=self.expand, exportable=exportable)
@@ -96,15 +110,16 @@ class MidasNet_small_videpth(BaseModel):
         # self.fusion_2 = FeatureFusionBlock_mine(32+256, 32, self.scratch.activation)
         # self.fusion_3 = FeatureFusionBlock_mine(48+256, 48, self.scratch.activation)
         # self.fusion_4 = FeatureFusionBlock_mine(136+256, 136, self.scratch.activation)
-        self.correct4 = EstimateAndPlaceModule(features3-2)
-        self.correct3 = EstimateAndPlaceModule(features2-2)
-        self.correct2 = EstimateAndPlaceModule(features1-2)
-        self.correct1 = EstimateAndPlaceModule(features-2)
+        
+        # self.correct4 = EstimateAndPlaceModule(features3-2)
+        # self.correct3 = EstimateAndPlaceModule(features2-2)
+        # self.correct2 = EstimateAndPlaceModule(features1-2)
+        # self.correct1 = EstimateAndPlaceModule(features-2)
 
-        self.scratch.refinenet4 = FeatureFusionBlock_custom(features4, features3-2, self.scratch.activation, deconv=False, bn=False, expand=self.expand, align_corners=align_corners)
-        self.scratch.refinenet3 = FeatureFusionBlock_custom(features3, features2-2, self.scratch.activation, deconv=False, bn=False, expand=self.expand, align_corners=align_corners)
-        self.scratch.refinenet2 = FeatureFusionBlock_custom(features2, features1-2, self.scratch.activation, deconv=False, bn=False, expand=self.expand, align_corners=align_corners)
-        self.scratch.refinenet1 = FeatureFusionBlock_custom(features1, features-2, self.scratch.activation, deconv=False, bn=False, align_corners=align_corners)
+        self.scratch.refinenet4 = FeatureFusionBlock_custom(features4, features3, self.scratch.activation, deconv=False, bn=False, expand=self.expand, align_corners=align_corners)
+        self.scratch.refinenet3 = FeatureFusionBlock_custom(features3, features2, self.scratch.activation, deconv=False, bn=False, expand=self.expand, align_corners=align_corners)
+        self.scratch.refinenet2 = FeatureFusionBlock_custom(features2, features1, self.scratch.activation, deconv=False, bn=False, expand=self.expand, align_corners=align_corners)
+        self.scratch.refinenet1 = FeatureFusionBlock_custom(features1, features, self.scratch.activation, deconv=False, bn=False, align_corners=align_corners)
 
         self.scratch.output_conv = OutputConv(features, self.groups, self.scratch.activation, non_negative)
         
@@ -112,7 +127,7 @@ class MidasNet_small_videpth(BaseModel):
             self.load(path)
 
 
-    def forward(self, scale_residual, features, d, scale_residual_list):
+    def forward(self, scale_residual, features, d, residual_mask = None):
         """Forward pass.
 
         Args:
@@ -130,9 +145,32 @@ class MidasNet_small_videpth(BaseModel):
         # decoder_outputs = decoder_outputs[::-1]
         # x = torch.cat([features, scale_residual], dim=1)
         # layer_0 = self.first(x)
-        layer_0 = self.SFFM(features, scale_residual)
-        intermedian_scale = self.d_conv(layer_0)
+        fe1_rgb = self.conv1_rel(features)
+        fe1_dep = self.conv1_dep(scale_residual)
+        fe1 = torch.cat((fe1_rgb, fe1_dep), dim=1)
+        fe1 = self.conv1(fe1)
+        initial_dense = self.conv_atten(fe1)
+        # print(type(initial_dense))
+        # print(len(initial_dense))
 
+
+        # layer_0 = self.SFFM(features, scale_residual)
+        intermedian_scale = self.d_conv(initial_dense)
+        # print(initial_dense[-1].shape)
+        # print(scale_residual.shape)
+        intermedian_scale = F.relu(1.0 + intermedian_scale)
+
+        # print(f"intermedian scale's shape is {intermedian_scale.shape}")
+        # print(f"scale_residual only 1 chanel's shape is {scale_residual[:,0,:,:].shape}")
+        # print(f"residual mask shape is {residual_mask.shape}")
+        residual_copy = scale_residual[:,0,:,:].unsqueeze(1)
+        intermedian_scale = intermedian_scale * (~ residual_mask) + residual_copy * residual_mask
+        # ga_result = d.clone()
+        intermedian_pred = d * intermedian_scale
+
+        layer_0 = torch.cat([features, initial_dense], dim=1)
+
+        # layer_0 = self.first(layer_0)
         # layer_0 = torch.cat([layer_0, decoder_outputs[0]], dim=1)
         # layer_0 = self.fusion_1(layer_0)
         # print(f"layer 1 input shape {layer_0.shape}")
@@ -163,25 +201,25 @@ class MidasNet_small_videpth(BaseModel):
         layer_4_rn = self.scratch.layer4_rn(layer_4)
 
         path_4 = self.scratch.refinenet4(layer_4_rn)
-        decoder_output4 = self.correct4(path_4, scale_residual_list[0])
-        path_4 = torch.cat([path_4, decoder_output4], dim=1)
+        # decoder_output4 = self.correct4(path_4, scale_residual_list[0])
+        # path_4 = torch.cat([path_4, decoder_output4], dim=1)
         path_3 = self.scratch.refinenet3(path_4, layer_3_rn)
 
-        decoder_output3 = self.correct3(path_3, scale_residual_list[1])
-        path_3 = torch.cat([path_3, decoder_output3], dim=1)
+        # decoder_output3 = self.correct3(path_3, scale_residual_list[1])
+        # path_3 = torch.cat([path_3, decoder_output3], dim=1)
         path_2 = self.scratch.refinenet2(path_3, layer_2_rn)
 
-        decoder_output2 = self.correct2(path_2, scale_residual_list[2])
-        path_2 = torch.cat([path_2, decoder_output2], dim=1)
+        # decoder_output2 = self.correct2(path_2, scale_residual_list[2])
+        # path_2 = torch.cat([path_2, decoder_output2], dim=1)
         path_1 = self.scratch.refinenet1(path_2, layer_1_rn)
 
-        decoder_output1 = self.correct1(path_1, scale_residual_list[3])
-        path_1 = torch.cat([path_1, decoder_output1], dim=1)
+        # decoder_output1 = self.correct1(path_1, scale_residual_list[3])
+        # path_1 = torch.cat([path_1, decoder_output1], dim=1)
         
         out = self.scratch.output_conv(path_1)
 
         scales = F.relu(1.0 + out)
-        intermedian_scale = F.relu(1.0 + intermedian_scale)
+        
         # filtered_d = d.clone()  # Clone d to create a new tensor
         # filtered_d[filtered_d == self.max_pred] = 0.0
         # lower_bound = 0.8 * (1.0 / self.max_pred)  # Example lower bound for the range
@@ -193,7 +231,7 @@ class MidasNet_small_videpth(BaseModel):
         # mask = (d >= lower_bound) & (d <= upper_bound)
 
         pred = d * scales
-        intermedian_pred = d * intermedian_scale
+        # 
         # pred = filtered_d * scales
 
         # clamp pred to min and max
@@ -216,6 +254,7 @@ class MidasNet_small_videpth(BaseModel):
         # show_images(d, pred, pred_clone)
         
         # also return scales
+        # return (pred, scales)
         return (pred, scales, intermedian_pred)
     
 class MidasNet_small_videpth_original(BaseModel):
