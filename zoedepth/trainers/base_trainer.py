@@ -178,6 +178,10 @@ class BaseTrainer:
             
             self.epoch = epoch
             ################################# Train loop ##########################################################
+            if epoch > 2:
+                self.config.w_rmse_intermedian = 0
+                self.config.w_si_intermedian = 0
+                print('Stop adding intermedian loss')
             if self.should_log:
                 wandb.log({"Epoch": epoch}, step=self.step)
             pbar = tqdm(enumerate(self.train_loader), desc=f"Epoch: {epoch + 1}/{self.config.epochs}. Loop: Train",

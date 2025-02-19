@@ -90,6 +90,10 @@ def main_worker(gpu, ngpus_per_node, config):
         model = build_model(config)
         
         model = load_ckpt(config, model)
+
+        # for param in model.ScaleMapLearner.d_conv.parameters():
+        #     param.requires_grad = False
+        
         model = parallelize(config, model)
 
         total_params = f"{round(count_parameters(model)/1e6,2)}M"

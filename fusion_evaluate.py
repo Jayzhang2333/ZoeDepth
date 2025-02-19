@@ -35,7 +35,7 @@ from zoedepth.data.data_mono import DepthDataLoader
 from zoedepth.models.builder import build_model
 from zoedepth.utils.arg_utils import parse_unknown
 from zoedepth.utils.config import change_dataset, get_config, ALL_EVAL_DATASETS, ALL_INDOOR, ALL_OUTDOOR
-from zoedepth.utils.misc import (RunningAverageDict, colors, compute_metrics,
+from zoedepth.utils.misc import (RunningAverageDict, colors, compute_metrics,evaluation_on_ranges,
                         count_parameters)
 
 import tifffile
@@ -93,12 +93,20 @@ def infer(model, images, sparse_features, config, **kwargs):
     
 
 
-@torch.no_grad()
-def evaluate(model, test_loader, config, round_vals=True, round_precision=3):
+def evaluate(model, test_loader, config, round_vals=True, round_precision=3, multi_range_evaluation = [1,2,5,10,18]):
     model.eval()
-    metrics = RunningAverageDict()
-    count = 0
+    if multi_range_evaluation is not None:
+        metrics_list = []
+        for i in multi_range_evaluation:
+             metric_temp = RunningAverageDict()
+             metrics_list.append(metric_temp)
+    else:
+        metrics = RunningAverageDict()
+    # count = 0
     for i, sample in tqdm(enumerate(test_loader), total=len(test_loader)):
+       
+        # if i == 100:
+        #     break
         if 'has_valid_depth' in sample:
             
             
@@ -108,15 +116,7 @@ def evaluate(model, test_loader, config, round_vals=True, round_precision=3):
         image, depth = sample['image'], sample['depth']
         image, depth = image.cuda(), depth.cuda()
         sparse_features = sample['sparse_map'].cuda().float() 
-        nonzero_elements = sparse_features[sparse_features != 0]
 
-        # Handle the case where there might be no non-zero elements
-        if nonzero_elements.numel() > 0:
-            nonzero_min = nonzero_elements.min()
-            nonzero_max = nonzero_elements.max()
-            print("Non-zero min:", nonzero_min.item(), "Non-zero max:", nonzero_max.item())
-        else:
-            print("No non-zero elements in the tensor.")
         # print(sparse_features.shape)
         
         valid_points_mask = (sparse_features >= config.min_depth) & (sparse_features <= config.max_depth)
@@ -127,134 +127,75 @@ def evaluate(model, test_loader, config, round_vals=True, round_precision=3):
         if valid_points_count<=4:
             continue
 
-        valid_points_mask = (depth >= config.min_depth) & (depth <= config.max_depth)
+        gt_valid_points_mask = (depth >= config.min_depth) & (depth <= config.max_depth)
 
         # Count the number of valid points within the range
-        valid_points_count = valid_points_mask.sum().item()  # Convert to a Python int
+        gt_valid_points_count = gt_valid_points_mask.sum().item()  # Convert to a Python int
     
-        if valid_points_count<=0:
+        if gt_valid_points_count<=0:
             continue
         
         depth = depth.squeeze().unsqueeze(0).unsqueeze(0)
         focal = sample.get('focal', torch.Tensor(
             [715.0873]).cuda())  # This magic number (focal length) is only used for evaluating BTS model
-        
         pred = infer(model, image, sparse_features, config, dataset=sample['dataset'][0], focal=focal)
 
-        # print(pred.shape)
+       
+        if multi_range_evaluation is not None:
+            result = evaluation_on_ranges(depth, pred, sparse_mask=valid_points_mask, evaluation_range=multi_range_evaluation)
+        else:
+            result = compute_metrics(depth, pred, sparse_mask=valid_points_mask, config=config)
 
-        # Save image, depth, pred for visualization
-        if "save_images" in config and config.save_images:
-            import os
-            # print("Saving images ...")
-            from PIL import Image
-            import torchvision.transforms as transforms
-            from zoedepth.utils.misc import colorize
-
-            os.makedirs(config.save_images, exist_ok=True)
-            # def save_image(img, path):
-            d = colorize(depth.squeeze().cpu().numpy(), 0, 10)
-            p = colorize(pred.squeeze().cpu().numpy(), 0, 10)
-            im = transforms.ToPILImage()(image.squeeze().cpu())
-            im.save(os.path.join(config.save_images, f"{i}_img.png"))
-            Image.fromarray(d).save(os.path.join(config.save_images, f"{i}_depth.png"))
-            Image.fromarray(p).save(os.path.join(config.save_images, f"{i}_pred.png"))
-
-        ##################################################################
-        # predict_depth = nn.functional.interpolate(
-        #     pred, depth.shape[-2:], mode='bilinear', align_corners=True)
-
-        # predict_depth = predict_depth.squeeze().cpu().numpy()
-        # predict_depth[predict_depth < config.min_depth_eval] = config.min_depth_eval
-        # predict_depth[predict_depth > config.max_depth_eval] = config.max_depth_eval
-        # predict_depth[np.isinf(predict_depth)] = config.max_depth_eval
-        # predict_depth[np.isnan(predict_depth)] = config.min_depth_eval
-
-        # # print(sample['image_path'])
-        # # depth_path = sample['image_path'][0].replace('/imgs/', '/depth_pred_masking/')
-        # # tifffile.imwrite(depth_path, predict_depth, dtype=np.float32)
-
-
-
-        # gt_depth = depth.squeeze().cpu().numpy()
-        # gt_depth_display = gt_depth.copy()
-        # gt_depth_display[gt_depth_display==0] = config.max_depth_eval
-        # gt_depth_display[gt_depth_display < config.min_depth_eval] = config.min_depth_eval
-        # gt_depth_display[gt_depth_display > config.max_depth_eval] = config.max_depth_eval
-
-
-        # valid_mask = np.logical_and(
-        #     gt_depth > config.min_depth_eval, gt_depth < config.max_depth_eval)
-
-        # masked_difference = np.where(valid_mask, np.abs(predict_depth - gt_depth), 0)
-        # # error_path = sample['image_path'][0].replace('/imgs/', '/error_map_masking/')
-        # # tifffile.imwrite(error_path, masked_difference, dtype=np.float32)
-        # # print(np.shape(masked_difference))
-        # # print(np.shape(valid_mask))
-
-        # rgb_image = image.squeeze().cpu().numpy()
-        # rgb_image = np.transpose(rgb_image, (1, 2, 0))
-
-        # fig, axs = plt.subplots(1, 4, figsize=(20, 5))  # Adjust the number of subplots to 4 and increase the figure width
-
-        # # RGB Image plot
-        # axs[0].imshow(rgb_image)
-        # axs[0].set_title('RGB Image', fontsize=14, fontweight='bold')
-        # axs[0].axis('off')
-
-        # # Prediction plot
-        # im1 = axs[1].imshow(predict_depth, cmap='inferno_r')
-        # axs[1].set_title('Prediction', fontsize=14, fontweight='bold')
-        # axs[1].axis('off')
-        # cbar1 = fig.colorbar(im1, ax=axs[1], fraction=0.046, pad=0.04)
-        # cbar1.set_label('Depth', fontsize=14, fontweight='bold')
-
-        # # Ground Truth plot
-        # im2 = axs[2].imshow(gt_depth_display, cmap='inferno_r')  # Use gt_depth here
-        # axs[2].set_title('Ground Truth', fontsize=14, fontweight='bold')
-        # axs[2].axis('off')
-        # cbar2 = fig.colorbar(im2, ax=axs[2], fraction=0.046, pad=0.04)
-        # cbar2.set_label('Depth', fontsize=14, fontweight='bold')
-
-        # # Difference Map plot
-        # im3 = axs[3].imshow(masked_difference, cmap='inferno')  # Use masked_difference here
-        # axs[3].set_title('Difference Map', fontsize=14, fontweight='bold')
-        # axs[3].axis('off')
-        # cbar3 = fig.colorbar(im3, ax=axs[3], fraction=0.046, pad=0.04)
-        # cbar3.set_label('Depth', fontsize=14, fontweight='bold')
-
-        # plt.tight_layout()
-        # plt.show()
-
-        
-        ######################################################################
-
-        # print(depth.shape, pred.shape)
-        result = compute_metrics(depth, pred, config=config)
         if result == None:
             continue
         else:
-            metrics.update(result)
-            count = count +1
+            if multi_range_evaluation is not None:
+                for i in range(len(metrics_list)):
+                    metrics_list[i].update(result[i])
+
+            else:
+
+                metrics.update(result)
+            # count = count +1
+        
 
     if round_vals:
         def r(m): return round(m, round_precision)
     else:
         def r(m): return m
-    metrics = {k: r(v) for k, v in metrics.get_value().items()}
-    print(count)
-    return metrics
+
+    
+    if multi_range_evaluation is not None:
+        
+        for i in range(len(metrics_list)):
+            if metrics_list[i] is not None and metrics_list[i].get_value() is not None:
+                metrics_list[i] = {k: r(v) for k, v in metrics_list[i].get_value().items()}
+            else:
+                metrics_list[i] = {}
+    else:
+        metrics = {k: r(v) for k, v in metrics.get_value().items()}
+    # print(count)
+    if multi_range_evaluation is not None:
+        return metrics_list
+    else:
+        return [metrics]
 
 def main(config):
     model = build_model(config)
     test_loader = DepthDataLoader(config, 'online_eval').data
     model = model.cuda()
-    metrics = evaluate(model, test_loader, config)
+    multi_range_evaluation = [1,2,5,10,18]
+    metrics_list = evaluate(model, test_loader, config, multi_range_evaluation = multi_range_evaluation)
     print(f"{colors.fg.green}")
-    print(metrics)
+    for i in range(len(metrics_list)):
+        print(f'Range 0.1 - {multi_range_evaluation[i]}')
+        print(metrics_list[i])
+        print()
     print(f"{colors.reset}")
-    metrics['#params'] = f"{round(count_parameters(model, include_all=True)/1e6, 2)}M"
-    return metrics
+
+    for i in metrics_list:
+        i['#params'] = f"{round(count_parameters(model, include_all=True)/1e6, 2)}M"
+    return metrics_list
 
 
 def eval_model(model_name, pretrained_resource, dataset='nyu', **kwargs):
@@ -265,9 +206,8 @@ def eval_model(model_name, pretrained_resource, dataset='nyu', **kwargs):
     # config = change_dataset(config, dataset)  # change the dataset
     pprint(config)
     print(f"Evaluating {model_name} on {dataset}...")
-    metrics = main(config)
-    return metrics
-
+    metrics_list = main(config)
+    return metrics_list
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

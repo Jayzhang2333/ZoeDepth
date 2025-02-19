@@ -274,7 +274,8 @@ class Trainer(BaseTrainer):
             l_rmse = self.rmse_loss(
                 pred_depths, depths_gt, mask=mask.to(torch.bool), interpolate=True)
 
-        metrics = compute_metrics(depths_gt, pred_depths, **self.config)
+        valid_points_mask = (sparse_feature >= self.config.min_depth) & (sparse_feature <= self.config.max_depth)
+        metrics = compute_metrics(depths_gt, pred_depths,sparse_mask=valid_points_mask, **self.config)
         losses = {f"{self.silog_loss.name}": l_depth.item()}
         losses[self.rmse_loss.name] = l_rmse
 

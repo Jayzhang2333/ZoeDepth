@@ -668,7 +668,7 @@ class DataLoadPreprocess(Dataset):
             elif (self.config.name == 'ZoeDepth_sparse_feature_fusion' or self.config.name == 'ZoeDepth_videpth') and  (feature_path.lower().endswith('.csv') or feature_path.lower().endswith('.txt')):
 
                 sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=288, new_width=384)
-                if random.random() < 0.3:
+                if random.random() < 0.5:
                     # print("train with lower 1/3")
                     sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
                 # sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
@@ -681,7 +681,7 @@ class DataLoadPreprocess(Dataset):
                 # plt.show()
                 sparse_feature_map = resample_sparse_depth(sparse_feature_map,288,384)
                 # print('filtering sparse depth')
-                if random.random() < 0.3:
+                if random.random() < 0.5:
                     sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
                 sparse_feature_map = sparse_feature_map[..., np.newaxis]
                 # print(f"sparse feature shape when just loaded: {np.shape(sparse_feature_map)}")
@@ -816,7 +816,7 @@ class DataLoadPreprocess(Dataset):
             
             elif (self.config.name == 'ZoeDepth_sparse_feature_fusion' or self.config.name == 'ZoeDepth_videpth') and  (feature_path.lower().endswith('.csv') or feature_path.lower().endswith('.txt')):
                 sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=288, new_width=384)
-                # sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
+                sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
                 
             
             elif feature_path.lower().endswith('.png'):

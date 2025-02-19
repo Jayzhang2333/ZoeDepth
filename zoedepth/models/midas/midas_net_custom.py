@@ -9,7 +9,7 @@ from torch.nn import functional as F
 
 from .base_model import BaseModel
 from .blocks import FeatureFusionBlock_custom, _make_encoder, OutputConv, FeatureFusionBlock_mine, FeatureFusionBlock_custom_original, _make_encoder_original, DepthUncertaintyHead
-from zoedepth.models.layers.fusion_layers import FillConv, PyramidVisionTransformer, conv_bn_relu, BasicBlock
+from zoedepth.models.layers.fusion_layers import FillConv, PyramidVisionTransformer, conv_bn_relu, BasicBlock, SelfAttnPropagation
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -88,6 +88,12 @@ class MidasNet_small_videpth(BaseModel):
                                       bn=False)
         
         self.conv_atten = BasicBlock(32, 32, ratio=4)
+
+        # self.SelfAttention = SelfAttnPropagation(32)
+
+        # self.conv2 = conv_bn_relu(64, 32, kernel=3, stride=1, padding=1,
+                                    #   bn=False)
+
         
        
         
@@ -146,16 +152,20 @@ class MidasNet_small_videpth(BaseModel):
         # x = torch.cat([features, scale_residual], dim=1)
         # layer_0 = self.first(x)
         fe1_rgb = self.conv1_rel(features)
-        fe1_dep = self.conv1_dep(scale_residual)
+        fe1_dep = self.conv1_dep(scale_residual[:,0,:,:].unsqueeze(1))
         fe1 = torch.cat((fe1_rgb, fe1_dep), dim=1)
         fe1 = self.conv1(fe1)
-        initial_dense = self.conv_atten(fe1)
+        # fe1 = torch.cat((scale_residual, features), dim=1)
+        # fe1 = torch.cat((fe1, scale_residual[:,1,:,:].unsqueeze(1)), dim=1)
+        conv_dense = self.conv_atten(fe1)
+        # attention_dense = self.SelfAttention(fe1)
+        # combined_dense =  torch.cat((conv_dense, attention_dense), dim=1)
         # print(type(initial_dense))
         # print(len(initial_dense))
 
 
         # layer_0 = self.SFFM(features, scale_residual)
-        intermedian_scale = self.d_conv(initial_dense)
+        intermedian_scale = self.d_conv(conv_dense)
         # print(initial_dense[-1].shape)
         # print(scale_residual.shape)
         intermedian_scale = F.relu(1.0 + intermedian_scale)
@@ -168,7 +178,10 @@ class MidasNet_small_videpth(BaseModel):
         # ga_result = d.clone()
         intermedian_pred = d * intermedian_scale
 
-        layer_0 = torch.cat([features, initial_dense], dim=1)
+        # print(f'shape of featrues is {features.shape}')
+        # print(f'shape of initial_dense is {initial_dense.shape}')
+        layer_0 = torch.cat([features[:,0,:,:].unsqueeze(1), conv_dense], dim=1)
+        # print(f'shape of layer 0  is {layer_0.shape}')
 
         # layer_0 = self.first(layer_0)
         # layer_0 = torch.cat([layer_0, decoder_outputs[0]], dim=1)

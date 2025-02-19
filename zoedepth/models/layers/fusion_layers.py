@@ -5,6 +5,7 @@ import numpy as np
 from torch.nn import functional as F
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 import torchvision
+import math
 # from mmseg.utils import get_root_logger
 model_path = {
     'resnet18': 'resnet18.pth',
@@ -977,10 +978,10 @@ def conv_bn_relu(ch_in, ch_out, kernel, stride=1, padding=0, bn=True,
     return layers
 
 class PyramidVisionTransformer(nn.Module):
-    def __init__(self, img_size=(288,384), patch_size=16, in_chans=3, num_classes=1000, embed_dims=[64],
+    def __init__(self, img_size=(288,384), patch_size=1, in_chans=3, num_classes=1000, embed_dims=[64],
                  num_heads=[1], mlp_ratios=[4], qkv_bias=False, qk_scale=None, drop_rate=0.,
                  attn_drop_rate=0., drop_path_rate=0., norm_layer=nn.LayerNorm, depths=[3],
-                 sr_ratios=[8], num_stages=1, pretrained=None):
+                 sr_ratios=[1], num_stages=1, pretrained=None):
         super().__init__()
         self.depths = depths
         self.num_stages = num_stages
@@ -1071,3 +1072,67 @@ class PyramidVisionTransformer(nn.Module):
         x = self.forward_features(x)
 
         return x
+    
+
+
+class SelfAttnPropagation(nn.Module):
+    """
+    Global self-attention propagation on an image feature map.
+    
+    This module propagates the image feature map using a self-attention mechanism.
+    The feature map is first flattened, then linear layers are used to compute the
+    query, key, and value. Finally, a scaled dot-product attention is computed to 
+    obtain the output, which is then combined with the original input via a residual
+    connection.
+    
+    Args:
+        in_channels (int): Number of channels in the input feature map.
+    """
+    def __init__(self, in_channels):
+        super(SelfAttnPropagation, self).__init__()
+        self.q_proj = nn.Linear(in_channels, in_channels)
+        self.k_proj = nn.Linear(in_channels, in_channels)
+        self.v_proj = nn.Linear(in_channels, in_channels)
+        self.gamma = nn.Parameter(torch.zeros(1))
+        
+        # Initialize parameters with Xavier uniform initialization
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+                
+    def forward(self, feature):
+        """
+        Forward pass of the self-attention layer.
+        
+        Args:
+            feature (torch.Tensor): Input feature map of shape [B, C, H, W].
+            
+        Returns:
+            out (torch.Tensor): Output feature map after applying self-attention, 
+                                of shape [B, C, H, W].
+            attention (torch.Tensor): Attention map of shape [B, N, N] where N = H * W.
+        """
+        B, C, H, W = feature.size()
+        
+        # Flatten spatial dimensions: [B, C, H, W] -> [B, H*W, C]
+        x = feature.view(B, C, H * W).permute(0, 2, 1)  # [B, N, C], where N = H * W
+        
+        # Compute query, key, and value via linear projections
+        query = self.q_proj(x)  # [B, N, C]
+        key   = self.k_proj(x)  # [B, N, C]
+        value = self.v_proj(x)  # [B, N, C]
+        
+        # Compute scaled dot-product attention scores: [B, N, N]
+        scores = torch.matmul(query, key.transpose(1, 2)) / math.sqrt(C)
+        attention = torch.softmax(scores, dim=-1)
+        
+        # Propagate the features using the attention map: [B, N, C]
+        out = torch.matmul(attention, value)
+        
+        # Reshape the output back to the original spatial dimensions: [B, C, H, W]
+        out = out.permute(0, 2, 1).view(B, C, H, W)
+        
+        # Apply the residual connection with a learnable scaling parameter
+        out = self.gamma * out + feature
+        
+        return out, attention

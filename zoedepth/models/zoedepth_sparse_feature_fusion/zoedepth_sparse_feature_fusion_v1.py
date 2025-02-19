@@ -374,7 +374,7 @@ class ZoeDepth_sparse_feature_fusion(DepthModel):
         # rgb_and_reltive_depth = torch.cat([rel_depth, out[0]], dim=1)
         # rgb_and_reltive_depth = torch.cat([rel_depth.clone(), scale_depth_residual_mask], dim=1)
         # rgb_and_reltive_depth = rel_depth.clone()
-        # ga_and_reltive_depth = torch.cat([ga_result, rel_depth], dim=1)
+        ga_and_reltive_depth = torch.cat([ga_result, rel_depth], dim=1)
 
         # count_not_equal_to_one = (scale_depth_residual != 1).sum()
         # print(count_not_equal_to_one)  # tensor(3)
@@ -383,7 +383,7 @@ class ZoeDepth_sparse_feature_fusion(DepthModel):
         # show_images_three_sources(rel_depth, scale_depth_residual, x)
         # pred, scales, intermedian_pred = self.ScaleMapLearner(residual_and_mask,rgb_and_reltive_depth, ga_result, scale_residual_list[1:-1], scale_depth_residual_mask)
         pred, scales, intermedian_pred = self.ScaleMapLearner(scale_depth_residual,ga_result, ga_result, scale_depth_residual_mask)
-        # show_images(scale_depth_residual)
+        # pred, scales = self.ScaleMapLearner(residual_and_mask,ga_result, ga_result, scale_depth_residual_mask)
         # pred, scales = self.ScaleMapLearner(scale_depth_residual,rgb_and_reltive_depth, ga_result, scale_residual_list[1:-1])
 
         output = dict(metric_depth=1.0/pred)
