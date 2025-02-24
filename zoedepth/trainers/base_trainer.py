@@ -44,6 +44,23 @@ from zoedepth.utils.misc import RunningAverageDict, colorize, colors
 def is_rank_zero(args):
     return args.rank == 0
 
+# def print_learning_rates(model, optimizer):
+#     mvit_lr = None
+#     other_lr = None
+
+#     for param_group in optimizer.param_groups:
+#         lr = param_group['lr']
+#         params = param_group['params']
+        
+#         # Check if this parameter group belongs to mViT
+#         if any(p in model.ScaleMapLearner.mViT.parameters() for p in params):
+#             mvit_lr = lr
+#         else:
+#             other_lr = lr
+    
+#     print(f"Learning Rate for mViT: {mvit_lr}")
+#     print(f"Learning Rate for Other Modules: {other_lr}")
+
 
 class BaseTrainer:
     def __init__(self, config, model, train_loader, test_loader=None, device=None):
@@ -59,7 +76,25 @@ class BaseTrainer:
         self.train_loader = train_loader
         self.test_loader = test_loader
         self.optimizer = self.init_optimizer()
+        num_param_groups = len(self.optimizer.param_groups)
+        print(f"Number of parameter groups in optimizer: {num_param_groups}")
         self.scheduler = self.init_scheduler()
+        self.print_learning_rates()
+
+    def print_learning_rates(self):
+        """Prints learning rates for mViT and other parameters after initializing optimizer & scheduler."""
+        m = self.model.module if self.config.multigpu else self.model
+        mvit_params = set(m.ScaleMapLearner.mViT.parameters())
+
+        print("\n=== Learning Rates After Initialization ===")
+        for i, param_group in enumerate(self.optimizer.param_groups):
+            lr = param_group['lr']
+            params = param_group['params']
+
+            if any(p in mvit_params for p in params):
+                print(f"Group {i}: Learning Rate for mViT = {lr}")
+            else:
+                print(f"Group {i}: Learning Rate for Other Parameters = {lr}")
 
     def resize_to_target(self, prediction, target):
         if prediction.shape[2:] != target.shape[-2:]:
@@ -92,6 +127,25 @@ class BaseTrainer:
             "Resuming training is not properly supported in this repo. Implement loading / saving of optimizer and scheduler to support it.")
         self.model = model
 
+    # def init_optimizer(self):
+    #     m = self.model.module if self.config.multigpu else self.model
+
+    #     base_lr = self.config.lr  # Base learning rate
+    #     mvit_lr = base_lr * 10  # Higher learning rate for mViT
+
+    #     # Get all parameters of ScaleMapLearner
+    #     scale_map_learner_params = dict(m.ScaleMapLearner.named_parameters())
+
+    #     # Separate mViT parameters
+    #     mvit_params = {k: v for k, v in scale_map_learner_params.items() if "mViT" in k}
+    #     other_params = {k: v for k, v in scale_map_learner_params.items() if "mViT" not in k}
+
+    #     param_groups = [
+    #         {"params": list(mvit_params.values()), "lr": mvit_lr},  # Higher LR for mViT
+    #         {"params": list(other_params.values()), "lr": base_lr},  # Base LR for other parameters
+    #     ]
+
+    #     return optim.AdamW(param_groups, lr=base_lr, weight_decay=self.config.wd)
     def init_optimizer(self):
         m = self.model.module if self.config.multigpu else self.model
 
@@ -109,6 +163,9 @@ class BaseTrainer:
             params = m.get_lr_params(self.config.lr)
             # lrs = [l['lr'] for l in params]
             # print(lrs)
+
+        # since params is already a list of dict that conatins lr for each paramater group, the lr passing into AdamW here is to make sure 
+        # parameters that is not included in params also has a learning rate
         return optim.AdamW(params, lr=self.config.lr, weight_decay=self.config.wd)
 
     def init_scheduler(self):
@@ -178,10 +235,10 @@ class BaseTrainer:
             
             self.epoch = epoch
             ################################# Train loop ##########################################################
-            if epoch > 2:
-                self.config.w_rmse_intermedian = 0
-                self.config.w_si_intermedian = 0
-                print('Stop adding intermedian loss')
+            # if epoch > 2:
+            #     self.config.w_rmse_intermedian = 0
+            #     self.config.w_si_intermedian = 0
+            #     print('Stop adding intermedian loss')
             if self.should_log:
                 wandb.log({"Epoch": epoch}, step=self.step)
             pbar = tqdm(enumerate(self.train_loader), desc=f"Epoch: {epoch + 1}/{self.config.epochs}. Loop: Train",
@@ -216,6 +273,7 @@ class BaseTrainer:
 
                 if self.test_loader:
                     if (self.step % validate_every) == 0:
+                        self.print_learning_rates()
                         self.model.eval()
                         if self.should_write:
                             self.save_checkpoint(

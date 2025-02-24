@@ -8,8 +8,8 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 from .base_model import BaseModel
-from .blocks import FeatureFusionBlock_custom, _make_encoder, OutputConv, FeatureFusionBlock_mine, FeatureFusionBlock_custom_original, _make_encoder_original, DepthUncertaintyHead
-from zoedepth.models.layers.fusion_layers import FillConv, PyramidVisionTransformer, conv_bn_relu, BasicBlock, SelfAttnPropagation
+from .blocks import FeatureFusionBlock_custom, _make_encoder, OutputConv, FeatureFusionBlock_mine, FeatureFusionBlock_custom_original, _make_encoder_original, DepthUncertaintyHead, _make_encoder_conv_trans
+from zoedepth.models.layers.fusion_layers import FillConv, PyramidVisionTransformer, conv_bn_relu, BasicBlock, SelfAttnPropagation, mViT
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -25,6 +25,191 @@ def weights_init(m):
     elif isinstance(m, nn.BatchNorm2d):
         m.weight.data.fill_(1)
         m.bias.data.zero_()
+
+
+class SML_with_conv_trans(BaseModel):
+    """Network for monocular depth estimation.
+    """
+
+    def __init__(self, path=None, features=64, backbone="efficientnet_lite3", non_negative=False, exportable=True, channels_last=False, align_corners=True,
+        blocks={'expand': True}, in_channels=2, regress='r', min_pred=None, max_pred=None):
+        """Init.
+
+        Args:
+            path (str, optional): Path to saved model. Defaults to None.
+            features (int, optional): Number of features. Defaults to 64.
+            backbone (str, optional): Backbone network for encoder. Defaults to efficientnet_lite3.
+        """
+        print("Loading weights: ", path)
+
+        super(SML_with_conv_trans, self).__init__()
+
+        use_pretrained = False if path else True
+        print(f'use pre-trained weight is {use_pretrained}')
+        # use_pretrained = False
+                
+        self.channels_last = channels_last
+        self.blocks = blocks
+        self.backbone = backbone
+
+        self.groups = 1
+
+        # for model output
+        self.regress = regress
+        self.min_pred = min_pred
+        self.max_pred = max_pred
+
+        features1=features
+        features2=features
+        features3=features
+        features4=features
+        self.expand = False
+        if "expand" in self.blocks and self.blocks['expand'] == True:
+            self.expand = True
+            features1=features
+            features2=features*2
+            features3=features*4
+            features4=features*8
+
+
+
+        self.conv1_ga = conv_bn_relu(1, 16, kernel=3, stride=1, padding=1,
+                                          bn=False)
+        self.conv1_sparse = conv_bn_relu(1, 16, kernel=3, stride=1, padding=1,
+                                          bn=False)
+        
+        
+        self.conv_combined = conv_bn_relu(32, 63, kernel=3, stride=1, padding=1,
+                                              bn=False)
+        
+
+        self.conv_atten = BasicBlock(64, 64, ratio=4)
+        # self.conv_atten_pos = conv_bn_relu(32, 128, kernel=3, stride=1, padding=1,
+        #                                bn=False)
+
+        self.mViT = mViT(64, n_query_channels=128, patch_size=16, embedding_dim=128)
+
+        # self.conv_combined_pos = conv_bn_relu(256, 256, kernel=3, stride=1, padding=1,
+        #                                bn=False)
+
+        
+       
+
+        
+       
+        
+        # self.d_conv = nn.Sequential(
+        #         nn.Conv2d(128, 32, 1, 1, 0),
+        #         nn.LeakyReLU(0.2, inplace=True),
+        #         nn.Conv2d(32, 1, 1, 1, 0),
+        #         nn.ReLU(True), #should use identity
+        #     )
+        
+
+        self.pretrained, self.scratch = _make_encoder_conv_trans(self.backbone, features, use_pretrained, groups=self.groups, expand=self.expand, exportable=exportable)
+
+        
+        self.scratch.activation = nn.ReLU(False)    
+
+
+        self.scratch.refinenet4 = FeatureFusionBlock_custom(features4, features3, self.scratch.activation, deconv=False, bn=False, expand=self.expand, align_corners=align_corners)
+        self.scratch.refinenet3 = FeatureFusionBlock_custom(features3, features2, self.scratch.activation, deconv=False, bn=False, expand=self.expand, align_corners=align_corners)
+        self.scratch.refinenet2 = FeatureFusionBlock_custom(features2, features1, self.scratch.activation, deconv=False, bn=False, expand=self.expand, align_corners=align_corners)
+        self.scratch.refinenet1 = FeatureFusionBlock_custom(features1, features, self.scratch.activation, deconv=False, bn=False, align_corners=align_corners)
+
+        self.scratch.output_conv = OutputConv(features, self.groups, self.scratch.activation, non_negative)
+        
+        if path:
+            self.load(path)
+
+
+    def forward(self, scale_residual, ga_result, d, residual_mask = None):
+        """Forward pass.
+
+        Args:
+            x (tensor): input data (image)
+            d (tensor): unalterated input depth
+
+        Returns:
+            tensor: depth
+        """
+        if self.channels_last==True:
+            print("self.channels_last = ", self.channels_last)
+            scale_residual.contiguous(memory_format=torch.channels_last)
+            ga_result.contiguous(memory_format=torch.channels_last)
+            d.contiguous(memory_format=torch.channels_last)
+
+        # fe1_rgb = self.conv1_rel(features)
+        # fe1_dep = self.conv1_dep(scale_residual)
+        # fe1 = torch.cat((fe1_rgb, fe1_dep), dim=1)
+        # fe1 = self.conv1(fe1)
+        # print(scale_residual.shape)
+        # print(features.shape)
+        # fe1 = torch.cat((scale_residual, features), dim=1)
+        # print(fe1.shape)
+        
+        # fe1 = torch.cat((scale_residual, d), dim=1)
+        ga_embedding = self.conv1_ga(ga_result)
+        sparse_embedding = self.conv1_sparse(scale_residual[:,0,:,:].unsqueeze(1))
+
+
+        combined_embedding = torch.cat((ga_embedding, sparse_embedding), dim=1)
+        combined_embedding = self.conv_combined(combined_embedding)
+
+        combined_embedding = torch.cat((combined_embedding, scale_residual[:,1,:,:].unsqueeze(1)), dim=1)
+
+        conv_dense = self.conv_atten(combined_embedding)
+        # conv_dense = self.conv_atten_pos(conv_dense)
+
+        trans_dense = self.mViT(conv_dense)
+
+        # combined_post = torch.cat((conv_dense, trans_dense), dim=1)
+        # combined_post = self.conv_combined_pos(combined_post)
+       
+        # intermedian_scale = self.d_conv(trans_dense)
+        # intermedian_scale = F.relu(1.0 + intermedian_scale)
+        # residual_copy = scale_residual[:,0,:,:].unsqueeze(1)
+        # intermedian_scale = intermedian_scale * (1- residual_mask) + residual_copy * residual_mask
+        # intermedian_pred = d * intermedian_scale
+
+        
+        layer_0 = torch.cat([ga_result, trans_dense], dim=1)
+        layer_1 = self.pretrained.layer1(layer_0)
+        layer_2 = self.pretrained.layer2(layer_1)
+        layer_3 = self.pretrained.layer3(layer_2)
+        layer_4 = self.pretrained.layer4(layer_3)
+        
+        
+        layer_1_rn = self.scratch.layer1_rn(layer_1)
+        layer_2_rn = self.scratch.layer2_rn(layer_2)
+        layer_3_rn = self.scratch.layer3_rn(layer_3)
+        layer_4_rn = self.scratch.layer4_rn(layer_4)
+
+        
+        path_4 = self.scratch.refinenet4(layer_4_rn)
+        path_3 = self.scratch.refinenet3(path_4, layer_3_rn)
+        path_2 = self.scratch.refinenet2(path_3, layer_2_rn)
+        path_1 = self.scratch.refinenet1(path_2, layer_1_rn)
+        
+        out = self.scratch.output_conv(path_1)
+
+        scales = F.relu(1.0 + out)
+        
+
+        pred = d * scales
+  
+        if self.min_pred is not None:
+            min_pred_inv = 1.0/self.min_pred
+            pred[pred > min_pred_inv] = min_pred_inv
+            # intermedian_pred[intermedian_pred > min_pred_inv] = min_pred_inv
+        if self.max_pred is not None:
+            max_pred_inv = 1.0/self.max_pred
+            # max_pred_inv = 0
+            pred[pred < max_pred_inv] = max_pred_inv
+            # intermedian_pred[intermedian_pred < max_pred_inv] = max_pred_inv
+
+        return (pred, scales)
+        return (pred, scales, intermedian_pred)
 
 
 class MidasNet_small_videpth(BaseModel):

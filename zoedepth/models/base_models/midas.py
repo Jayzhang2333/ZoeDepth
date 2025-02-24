@@ -336,6 +336,7 @@ class MidasCore(nn.Module):
                 f"Invalid model type: {midas_model_type}. Must be one of {list(MIDAS_SETTINGS.keys())}")
         if "img_size" in kwargs:
             kwargs = MidasCore.parse_img_size(kwargs)
+        # if img_size is not in kwargs, it will use [384,384]
         img_size = kwargs.pop("img_size", [384, 384])
         print("img_size", img_size)
         midas = torch.hub.load("intel-isl/MiDaS", midas_model_type,

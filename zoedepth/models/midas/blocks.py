@@ -11,6 +11,16 @@ def _make_encoder(backbone, features, use_pretrained, groups=1, expand=False, ex
         
     return pretrained, scratch
 
+def _make_encoder_conv_trans(backbone, features, use_pretrained, groups=1, expand=False, exportable=True):
+    if backbone == "efficientnet_lite3":
+        pretrained = _make_pretrained_efficientnet_lite3_conv_trans(use_pretrained, exportable=exportable)
+        scratch = _make_scratch([32, 48 , 136 , 384], features, groups=groups, expand=expand)  # efficientnet_lite3     
+    else:
+        print(f"Backbone '{backbone}' not implemented")
+        assert False
+        
+    return pretrained, scratch
+
 def _make_encoder_original(backbone, features, use_pretrained, groups=1, expand=False, exportable=True):
     if backbone == "efficientnet_lite3":
         pretrained = _make_pretrained_efficientnet_lite3_original(use_pretrained, exportable=exportable)
@@ -67,6 +77,16 @@ def _make_pretrained_efficientnet_lite3(use_pretrained, exportable=False):
         pretrained=use_pretrained,
         exportable=exportable,
         in_chans=33
+    )
+    return _make_efficientnet_backbone(efficientnet)
+
+def _make_pretrained_efficientnet_lite3_conv_trans(use_pretrained, exportable=False):
+    efficientnet = torch.hub.load(
+        "rwightman/gen-efficientnet-pytorch",
+        "tf_efficientnet_lite3",
+        pretrained=use_pretrained,
+        exportable=exportable,
+        in_chans=129
     )
     return _make_efficientnet_backbone(efficientnet)
 

@@ -187,7 +187,7 @@ DATASETS_CONFIG = {
         "max_depth": 18.0,
         "data_path": "/",
         "gt_path": "/",
-        "filenames_file": "./train_test_inputs/tartanair/update_path_tartanair_training_swap_filtered_no_ocean_soulcity.txt",
+        "filenames_file": "./train_test_inputs/tartanair/ssd_update_path_tartanair_training_swap_filtered_no_ocean_soulcity.txt",
         # "filenames_file_prior_map": "./train_test_inputs/removed_bathroom_nyu_extract_train_sparse_depth.txt",
         "input_height": 480,
         "input_width": 640,
@@ -195,7 +195,7 @@ DATASETS_CONFIG = {
         "sparse_feature_width":680,
         "data_path_eval": "/",
         "gt_path_eval": "/",
-        "filenames_file_eval": "./train_test_inputs/tartanair/update_path_tartanair_testing_swap_filtered_no_ocean_soulcity_subsampled.txt",
+        "filenames_file_eval": "./train_test_inputs/tartanair/ssd_update_path_tartanair_testing_swap_filtered_no_ocean_soulcity_subsampled.txt",
         # "filenames_file_eval_prior_map": "./train_test_inputs/removed_bathroom_nyu_extract_test_sparse_depth.txt",
         "min_depth_eval": 0.1,
         "max_depth_eval": 18.0,
@@ -215,13 +215,13 @@ DATASETS_CONFIG = {
         "max_depth": 18.0,
         "data_path": "/",
         "gt_path": "/",
-        "filenames_file": "./train_test_inputs/flsea_training/update_path_flsea_training_combined_cleaned_output.txt",
+        "filenames_file": "./train_test_inputs/flsea_training/ssd_update_path_flsea_training_combined_cleaned_output.txt",
         "input_height": 608,
         "input_width": 968,
 
         "data_path_eval": "/",
         "gt_path_eval": "/",
-        "filenames_file_eval": "./train_test_inputs/flease_testing/update_path_FLSea_combined_cleaned_output.txt",
+        "filenames_file_eval": "./train_test_inputs/flease_testing/ssd_update_path_FLSea_combined_cleaned_output.txt",
         # "filenames_file_eval": "./train_test_inputs/flsea_red_sea/pier_path_test_with_matched_features.txt",
         # "filenames_file_eval": "./train_test_inputs/flease_testing/flsea_red_sea_test_with_matched_features.txt",
         "min_depth_eval": 0.1,
@@ -547,7 +547,7 @@ def get_config(model_name, mode='train', dataset=None, **overwrite_kwargs):
     """
 
 
-    check_choices("Model", model_name, ["zoedepth", "zoedepth_nk", 'zoedepth_sparse_feature', 'zoedepth_sparse_feature_ga', 'zoedepth_sparse_feature_fusion', 'zoedepth_videpth', 'zoedepth_geometry'])
+    check_choices("Model", model_name, ["zoedepth", "zoedepth_nk", 'zoedepth_sparse_feature', 'zoedepth_sparse_feature_ga', 'zoedepth_sparse_feature_fusion', 'zoedepth_videpth', 'zoedepth_geometry', 'zoedepth_conv_trans'])
     check_choices("Mode", mode, ["train", "infer", "eval"])
     if mode == "train":
         check_choices("Dataset", dataset, ["nyu", "kitti", "mix", "nyu_sparse_feature", "void", "diode_sparse_feature","flsea_sparse_feature",'tartanair', None])
