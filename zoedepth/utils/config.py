@@ -184,7 +184,7 @@ DATASETS_CONFIG = {
         "dataset": "tartanair",
         "avoid_boundary": False,
         "min_depth": 0.1,   # originally 0.1
-        "max_depth": 18.0,
+        "max_depth": 20.0,
         "data_path": "/",
         "gt_path": "/",
         "filenames_file": "./train_test_inputs/tartanair/ssd_update_path_tartanair_training_swap_filtered_no_ocean_soulcity.txt",
@@ -197,8 +197,9 @@ DATASETS_CONFIG = {
         "gt_path_eval": "/",
         "filenames_file_eval": "./train_test_inputs/tartanair/ssd_update_path_tartanair_testing_swap_filtered_no_ocean_soulcity_subsampled.txt",
         # "filenames_file_eval_prior_map": "./train_test_inputs/removed_bathroom_nyu_extract_test_sparse_depth.txt",
+        # "filenames_file_eval": "./train_test_inputs/tartanair/tartanair_ocean_testing.txt",
         "min_depth_eval": 0.1,
-        "max_depth_eval": 18.0,
+        "max_depth_eval": 20.0,
 
         "do_random_rotate": False,
         "degree": 1.0,
@@ -221,13 +222,41 @@ DATASETS_CONFIG = {
 
         "data_path_eval": "/",
         "gt_path_eval": "/",
-        "filenames_file_eval": "./train_test_inputs/flease_testing/ssd_update_path_FLSea_combined_cleaned_output.txt",
+        "filenames_file_eval": "./train_test_inputs/flease_testing/flsea_preserved_testing.txt",
         # "filenames_file_eval": "./train_test_inputs/flsea_red_sea/pier_path_test_with_matched_features.txt",
         # "filenames_file_eval": "./train_test_inputs/flease_testing/flsea_red_sea_test_with_matched_features.txt",
         "min_depth_eval": 0.1,
         "max_depth_eval": 10.0,
         "sparse_feature_height": 240,
         "sparse_feature_width":320,
+        "do_random_rotate": False,
+        "degree": 1.0,
+        "do_kb_crop": False,
+        "garg_crop": False,
+        "eigen_crop": False,
+        "do_input_resize": True
+
+    },
+     "sea_thru": {
+        "dataset": "flsea_sparse_feature",
+        "avoid_boundary": False,
+        "min_depth": 0.1,   # flsea dataset, canyons is from 4-7m, red sea is from 3-8m
+        "max_depth": 18.0,
+        "data_path": "/",
+        "gt_path": "/",
+        "filenames_file": "./train_test_inputs/flsea_training/ssd_update_path_flsea_training_combined_cleaned_output.txt",
+        "input_height": 1596,
+        "input_width": 2400,
+
+        "data_path_eval": "/",
+        "gt_path_eval": "/",
+        "filenames_file_eval": "/media/jay/Lexar/SeaThru/sea_thru/image_depth_sparse_paths.txt",
+        # "filenames_file_eval": "./train_test_inputs/flsea_red_sea/pier_path_test_with_matched_features.txt",
+        # "filenames_file_eval": "./train_test_inputs/flease_testing/flsea_red_sea_test_with_matched_features.txt",
+        "min_depth_eval": 0.1,
+        "max_depth_eval": 10.0,
+        "sparse_feature_height": 1596,
+        "sparse_feature_width":2400,
         "do_random_rotate": False,
         "degree": 1.0,
         "do_kb_crop": False,
@@ -547,7 +576,9 @@ def get_config(model_name, mode='train', dataset=None, **overwrite_kwargs):
     """
 
 
-    check_choices("Model", model_name, ["zoedepth", "zoedepth_nk", 'zoedepth_sparse_feature', 'zoedepth_sparse_feature_ga', 'zoedepth_sparse_feature_fusion', 'zoedepth_videpth', 'zoedepth_geometry', 'zoedepth_conv_trans'])
+    check_choices("Model", model_name, ["zoedepth", "zoedepth_nk", 'zoedepth_sparse_feature', 'zoedepth_sparse_feature_ga', 
+                                        'zoedepth_sparse_feature_fusion', 'zoedepth_videpth', 'zoedepth_geometry', 
+                                        'zoedepth_conv_trans', 'PromptDA', 'videpth_spn', 'AffinityDC', 'DA_SML'])
     check_choices("Mode", mode, ["train", "infer", "eval"])
     if mode == "train":
         check_choices("Dataset", dataset, ["nyu", "kitti", "mix", "nyu_sparse_feature", "void", "diode_sparse_feature","flsea_sparse_feature",'tartanair', None])

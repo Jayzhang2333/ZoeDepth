@@ -92,6 +92,65 @@ class NegativeLogLikelihoodLoss(nn.Module):
 
 
 
+class InvNegativeLogLikelihoodLoss(nn.Module):
+    """
+    Negative Log Likelihood Loss for a regression task with uncertainty estimation.
+    
+    This loss function assumes that the network outputs two separate predictions:
+        - depth_pred: the predicted depth (mean), μ.
+        - uncertainty_pred: the predicted log variance, s = log(σ^2).
+    
+    The per-pixel loss is computed as:
+    
+        loss = 0.5 * exp(-s) * (y - μ)^2 + 0.5 * s
+        
+    Optionally, a binary mask can be provided to select valid pixels only.
+    """
+    def __init__(self) -> None:
+        super(InvNegativeLogLikelihoodLoss, self).__init__()
+        self.name = "NegativeLogLikelihoodLoss"
+
+    def forward(self, depth_pred, uncertainty_pred, target, mask=None, interpolate=True):
+        """
+        Parameters:
+            depth_pred (torch.Tensor): Predicted depth (mean), shape (N, 1, H_pred, W_pred).
+            uncertainty_pred (torch.Tensor): Predicted log variance, shape (N, 1, H_pred, W_pred).
+            target (torch.Tensor): Ground truth depth, shape (N, 1, H, W).
+            mask (torch.Tensor, optional): Binary mask to specify valid pixels. Shape (N, 1, H, W).
+            interpolate (bool, optional): Whether to interpolate predictions to the target size if needed.
+        Returns:
+            torch.Tensor: The computed loss (scalar).
+        """
+        # Interpolate depth prediction if its spatial dimensions don't match the target.
+        if interpolate and depth_pred.shape[-1] != target.shape[-1]:
+            depth_pred = F.interpolate(depth_pred, size=target.shape[-2:], mode='bilinear', align_corners=True)
+        
+        # Interpolate uncertainty prediction if necessary.
+        if interpolate and uncertainty_pred.shape[-1] != target.shape[-1]:
+            uncertainty_pred = F.interpolate(uncertainty_pred, size=target.shape[-2:], mode='bilinear', align_corners=True)
+        
+        # Compute the per-pixel negative log likelihood loss.
+        if mask is not None:
+            # Convert mask to boolean if it's not already.
+            valid = mask.bool() if mask.dtype != torch.bool else mask
+
+            # Select only the valid pixels.
+            target_valid = target[valid]
+            target_valid = 1.0 / target_valid
+            depth_pred_valid = depth_pred[valid]
+            uncertainty_pred_valid = uncertainty_pred[valid]
+
+            # Compute the loss only on valid pixels.
+            loss = 0.5 * torch.exp(-uncertainty_pred_valid) * (target_valid - depth_pred_valid) ** 2 + 0.5 * uncertainty_pred_valid
+            loss = loss.mean() *100 # Average loss over the valid pixels.
+        else:
+            loss = 0.5 * torch.exp(-uncertainty_pred) * (target - depth_pred) ** 2 + 0.5 * uncertainty_pred
+            loss = loss.mean() * 100
+        
+        return loss
+
+
+
 class L1SmoothLoss(nn.Module):
     """Root Mean Squared Error (RMSE)"""
 
@@ -161,6 +220,43 @@ class RMSELoss(nn.Module):
             loss = torch.sqrt(self.mse_loss(input, target))
 
         return loss
+    
+class InvRMSELoss(nn.Module):
+    """Root Mean Squared Error (RMSE)"""
+
+    def __init__(self) -> None:
+        super(InvRMSELoss, self).__init__()
+
+        self.name = "iRMSELoss"
+
+        self.mse_loss = nn.MSELoss()
+
+    def forward(self, input, target, mask=None, interpolate=True):
+
+        input = extract_key(input, KEY_OUTPUT)
+        if input.shape[-1] != target.shape[-1] and interpolate:
+            input = nn.functional.interpolate(
+                input, target.shape[-2:], mode='bilinear', align_corners=True)
+            intr_input = input
+        else:
+            intr_input = input
+
+        if target.ndim == 3:
+            target = target.unsqueeze(1)
+
+        if mask is not None:
+            if mask.ndim == 3:
+                mask = mask.unsqueeze(1)
+
+            input = input[mask]
+            target = target[mask]
+            target = 1.0/target
+
+        with amp.autocast(enabled=False):
+            loss = 50 * torch.sqrt(self.mse_loss(input, target))
+
+        return loss
+
 
 
 # Main loss function used for ZoeDepth. Copy/paste from AdaBins repo (https://github.com/shariqfarooq123/AdaBins/blob/0952d91e9e762be310bb4cd055cbfe2448c0ce20/loss.py#L7)
@@ -189,6 +285,61 @@ class SILogLoss(nn.Module):
 
             input = input[mask]
             target = target[mask]
+
+        with amp.autocast(enabled=False):  # amp causes NaNs in this loss function
+            alpha = 1e-7
+            g = torch.log(input + alpha) - torch.log(target + alpha)
+
+            # n, c, h, w = g.shape
+            # norm = 1/(h*w)
+            # Dg = norm * torch.sum(g**2) - (0.85/(norm**2)) * (torch.sum(g))**2
+
+            Dg = torch.var(g) + self.beta * torch.pow(torch.mean(g), 2)
+
+            loss = 10 * torch.sqrt(Dg)
+
+        if torch.isnan(loss):
+            print("Nan SILog loss")
+            print("input:", input.shape)
+            print("target:", target.shape)
+            print(mask)
+            print("G", torch.sum(torch.isnan(g)))
+            print("Input min max", torch.min(input), torch.max(input))
+            print("Target min max", torch.min(target), torch.max(target))
+            print("Dg", torch.isnan(Dg))
+            print("loss", torch.isnan(loss))
+
+        if not return_interpolated:
+            return loss
+
+        return loss, intr_input
+    
+class InvSILogLoss(nn.Module):
+    """SILog loss (pixel-wise)"""
+    def __init__(self, beta=0.15):
+        super(InvSILogLoss, self).__init__()
+        self.name = 'iSILog'
+        self.beta = beta
+
+    def forward(self, input, target, mask=None, interpolate=True, return_interpolated=False):
+        input = extract_key(input, KEY_OUTPUT)
+        if input.shape[-1] != target.shape[-1] and interpolate:
+            input = nn.functional.interpolate(
+                input, target.shape[-2:], mode='bilinear', align_corners=True)
+            intr_input = input
+        else:
+            intr_input = input
+
+        if target.ndim == 3:
+            target = target.unsqueeze(1)
+
+        if mask is not None:
+            if mask.ndim == 3:
+                mask = mask.unsqueeze(1)
+
+            input = input[mask]
+            target = target[mask]
+            target = 1.0 / target
 
         with amp.autocast(enabled=False):  # amp causes NaNs in this loss function
             alpha = 1e-7

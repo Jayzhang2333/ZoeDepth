@@ -1,0 +1,50 @@
+{
+    "model": {
+        "name": "PromptDA",
+        "version_name": "v1",
+        "prior_channels" : 1,
+        "da_model_type" : "vits",
+        "memory_efficient": true,
+        "inverse_relative_depth": false,
+        "img_size": [294, 392],
+        "da_pretrained_recource": "/home/jay/Depth-Anything-V2/checkpoints/depth_anything_v2_vits.pth"
+    },
+    
+    "train": {
+        "train_dino": false,
+        "use_pretrained_midas": true,
+        "trainer": "PromptDA",
+        "epochs": 5,
+        "bs": 16,
+        "optim_kwargs": {"lr": 0.0001, "wd": 0.01},
+        "sched_kwargs": {"div_factor": 1, "final_div_factor": 1000, "pct_start": 0.1, "three_phase":false, "cycle_momentum": true},
+        "same_lr": false,
+        "w_rmse":1,
+        "w_si": 1,
+        "w_l1smooth":1,
+        "w_domain": 0.2,
+        "w_reg": 0,
+        "w_grad": 0,
+        "avoid_boundary": false,
+        "random_crop": false,
+        "input_width": 640,
+        "input_height": 480,
+        "dino_lr_factor": 1
+
+    },
+
+    "infer":{
+        "train_dino": false,
+        "use_pretrained_midas": false,
+        "pretrained_resource" : "",
+        "force_keep_ar": true,
+        "dino_lr_factor": 1
+    },
+
+    "eval":{
+        "train_dino": false,
+        "use_pretrained_midas": false,
+        "pretrained_resource" : "",
+        "dino_lr_factor": 1
+    }
+}

@@ -57,7 +57,7 @@ def infer(model, images, sparse_features, config, **kwargs):
             raise NotImplementedError(f"Unknown output type {type(pred)}")
         return pred
 
-    pred1 = model(images,sparse_feature=sparse_features, input_height = config.input_height, input_width = config.input_width, **kwargs)
+    pred1 = model(images, sparse_feature=sparse_features, input_height = config.input_height, input_width = config.input_width, **kwargs)
     # rel_1 = pred1['rel'].squeeze().cpu().numpy()
     pred1 = get_depth_from_prediction(pred1)
     return pred1
@@ -93,7 +93,7 @@ def infer(model, images, sparse_features, config, **kwargs):
     
 
 
-def evaluate(model, test_loader, config, round_vals=True, round_precision=3, multi_range_evaluation = [1,2,5,10,18]):
+def evaluate(model, test_loader, config, round_vals=True, round_precision=3, multi_range_evaluation = None):
     model.eval()
     if multi_range_evaluation is not None:
         metrics_list = []
@@ -142,9 +142,9 @@ def evaluate(model, test_loader, config, round_vals=True, round_precision=3, mul
 
        
         if multi_range_evaluation is not None:
-            result = evaluation_on_ranges(depth, pred, sparse_mask=valid_points_mask, evaluation_range=multi_range_evaluation)
+            result = evaluation_on_ranges(depth, pred, evaluation_range=multi_range_evaluation)
         else:
-            result = compute_metrics(depth, pred, sparse_mask=valid_points_mask, config=config)
+            result = compute_metrics(depth, pred, config=config)
 
         if result == None:
             continue
@@ -184,8 +184,9 @@ def main(config):
     model = build_model(config)
     test_loader = DepthDataLoader(config, 'online_eval').data
     model = model.cuda()
-    multi_range_evaluation = [1,2,5,10,18]
-    metrics_list = evaluate(model, test_loader, config, multi_range_evaluation = multi_range_evaluation)
+    multi_range_evaluation = [2,5,10]
+    # metrics_list = evaluate(model, test_loader, config, multi_range_evaluation = multi_range_evaluation)
+    metrics_list = evaluate(model, test_loader, config)
     print(f"{colors.fg.green}")
     for i in range(len(metrics_list)):
         print(f'Range 0.1 - {multi_range_evaluation[i]}')
@@ -221,16 +222,8 @@ if __name__ == '__main__':
     args, unknown_args = parser.parse_known_args()
     overwrite_kwargs = parse_unknown(unknown_args)
 
-    if "ALL_INDOOR" in args.dataset:
-        datasets = ALL_INDOOR
-    elif "ALL_OUTDOOR" in args.dataset:
-        datasets = ALL_OUTDOOR
-    elif "ALL" in args.dataset:
-        datasets = ALL_EVAL_DATASETS
-    elif "," in args.dataset:
-        datasets = args.dataset.split(",")
-    else:
-        datasets = [args.dataset]
+   
+    datasets = [args.dataset]
     
     for dataset in datasets:
         eval_model(args.model, pretrained_resource=args.pretrained_resource,

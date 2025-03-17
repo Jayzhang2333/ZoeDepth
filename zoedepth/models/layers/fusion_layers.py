@@ -1166,10 +1166,10 @@ class mViT(nn.Module):
 
 
 class PatchTransformerEncoder(nn.Module):
-    def __init__(self, in_channels, patch_size=10, embedding_dim=128, num_heads=4):
+    def __init__(self, in_channels, patch_size=10, embedding_dim=128, num_heads=4, num_layer = 4):
         super(PatchTransformerEncoder, self).__init__()
         encoder_layers = nn.TransformerEncoderLayer(embedding_dim, num_heads, dim_feedforward=1024)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers=4)  # takes shape S,N,E
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers=num_layer)  # takes shape S,N,E
 
         self.embedding_convPxP = nn.Conv2d(in_channels, embedding_dim,
                                            kernel_size=patch_size, stride=patch_size, padding=0)
@@ -1197,3 +1197,296 @@ class PixelWiseDotProduct(nn.Module):
         assert c == ck, "Number of channels in x and Embedding dimension (at dim 2) of K matrix must match"
         y = torch.matmul(x.view(n, c, h * w).permute(0, 2, 1), K.permute(0, 2, 1))  # .shape = n, hw, cout
         return y.permute(0, 2, 1).view(n, cout, h, w)
+    
+class Transpose(nn.Module):
+    def __init__(self, dim0, dim1):
+        super(Transpose, self).__init__()
+        self.dim0 = dim0
+        self.dim1 = dim1
+
+    def forward(self, x):
+        x = x.transpose(self.dim0, self.dim1)
+        return x
+
+class mViT_assemble(nn.Module):
+    def __init__(self, in_channels, patch_size=16, embedding_dim=128, out_channels=64, num_heads=8, size=None, num_layer = 4):
+        super(mViT_assemble, self).__init__()
+        self.patch_size = patch_size
+        self.original_size = size
+        self.patch_transformer = PatchTransformerEncoder(in_channels, patch_size, embedding_dim, num_heads, num_layer = num_layer)
+        self.assemble = nn.Sequential(
+            # Unflatten the tokens dimension (S) into spatial dimensions.
+            nn.Unflatten(2, torch.Size([size[0] // patch_size, size[1] // patch_size])),
+            nn.Conv2d(
+                in_channels=embedding_dim,
+                out_channels=out_channels,
+                kernel_size=1,
+                stride=1,
+                padding=0,
+            ),
+            # nn.ConvTranspose2d(
+            #     in_channels=out_channels,
+            #     out_channels=out_channels,
+            #     kernel_size=16,
+            #     stride=16,
+            #     padding=0,
+            #     bias=True,
+            #     dilation=1,
+            #     groups=1,
+            # )
+        )
+        self.final_conv = nn.Conv2d(
+            in_channels=out_channels,
+            out_channels=out_channels,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
+
+    def forward(self, x):
+        # x shape: (N, C, H, W)
+        # tokens shape from patch_transformer: (S, N, E)
+        tokens = self.patch_transformer(x)
+        # Permute tokens to get shape (N, E, S)
+        tokens = tokens.permute(1, 2, 0)
+        # Now, unflatten S into (H/patch_size, W/patch_size) as specified in nn.Unflatten
+        feature_map = self.assemble(tokens)
+        feature_map = F.interpolate(feature_map, size=self.original_size, mode='bilinear', align_corners=False)
+        
+        # Final convolution to refine the upsampled features.
+        feature_map = self.final_conv(feature_map)
+        # print(feature_map.shape)
+        return feature_map
+
+    
+#originally
+class BasicBlockFusion(nn.Module):
+    expansion = 1
+
+    def __init__(self, inplanes, planes, stride=1, downsample=None, ratio=16, fusion=False):
+        """
+        Args:
+            inplanes (int): Number of input channels.
+            planes (int): Number of output channels.
+            stride (int): Convolution stride.
+            downsample (nn.Module or None): Downsampling layer for the residual connection.
+            ratio (int): Ratio for channel attention.
+            fusion (bool): If True, this block will perform fusion (using concatenation) with an extra feature map.
+        """
+        super(BasicBlockFusion, self).__init__()
+        self.fusion = fusion
+
+        self.conv1 = conv3x3(inplanes, planes, stride)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.relu = nn.ReLU(inplace=True)
+
+        self.conv2 = conv3x3(planes, planes)
+        self.bn2 = nn.BatchNorm2d(planes)
+
+        self.ca = ChannelAttention(planes, ratio=ratio)
+        self.sa = SpatialAttention()
+
+        self.downsample = downsample
+        self.stride = stride
+
+        # Define fusion layers only if fusion is enabled for this block.
+        if self.fusion:
+            # self.ca_fusion = ChannelAttention(planes, ratio=ratio)
+            self.fuse_conv = nn.Conv2d(2 * planes, planes, kernel_size=3, padding = 1, bias=False)
+            self.fuse_bn = nn.BatchNorm2d(planes)
+
+    def forward(self, x, fuse=None):
+        """
+        Args:
+            x (Tensor): Input feature map.
+            fuse (Tensor or None): Extra feature map to fuse. Must have the same dimensions as x.
+        """
+        residual = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        out = self.ca(out) * out
+        out = self.sa(out) * out
+
+        if self.downsample is not None:
+            residual = self.downsample(x)
+
+        out += residual
+
+        # Apply fusion using concatenation if enabled and a fusion feature is provided.
+        if self.fusion and fuse is not None:
+            # print('fuse')
+            out = torch.cat([out, fuse], dim=1)
+            out = self.fuse_conv(out)
+            out = self.fuse_bn(out)
+
+            # channel_attention = out + fuse
+            # channel_attention = self.ca_fusion(channel_attention)
+            # out_part = out * channel_attention
+            # fuse_part = fuse * (1 - channel_attention)
+            # out = out_part + fuse_part
+            # out = self.fuse_bn(out)
+
+
+        out = self.relu(out)
+        return out
+
+
+
+class BasicBlockEarlyFusion(nn.Module):
+    expansion = 1
+
+    def __init__(self, inplanes, planes, stride=1, downsample=None, ratio=16, fusion=False):
+        """
+        Args:
+            inplanes (int): Number of input channels.
+            planes (int): Number of output channels.
+            stride (int): Convolution stride.
+            downsample (nn.Module or None): Downsampling layer for the residual connection.
+            ratio (int): Ratio for channel attention.
+            fusion (bool): If True, this block will perform fusion (using concatenation) with an extra feature map.
+        """
+        super(BasicBlockEarlyFusion, self).__init__()
+        self.fusion = fusion
+
+        self.conv1 = conv3x3(inplanes, planes, stride)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.relu = nn.ReLU(inplace=True)
+
+        self.conv2 = conv3x3(planes, planes)
+        self.bn2 = nn.BatchNorm2d(planes)
+
+        self.ca = ChannelAttention(planes, ratio=ratio)
+        self.sa = SpatialAttention()
+
+        self.downsample = downsample
+        self.stride = stride
+
+        # Define fusion layers only if fusion is enabled for this block.
+        if self.fusion:
+            # self.ca_fusion = ChannelAttention(planes, ratio=ratio)
+            self.fuse_conv = nn.Conv2d(inplanes, planes, kernel_size=3, padding = 1, bias=False)
+            self.fuse_bn = nn.BatchNorm2d(planes)
+
+    def forward(self, x, fuse=None):
+        """
+        Args:
+            x (Tensor): Input feature map.
+            fuse (Tensor or None): Extra feature map to fuse. Must have the same dimensions as x.
+        """
+        if self.fusion and fuse is not None:
+            # print('fuse')
+            x = torch.cat([x, fuse], dim=1)
+            x = self.fuse_conv(x)
+            x = self.fuse_bn(x)
+
+        residual = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        out = self.ca(out) * out
+        out = self.sa(out) * out
+
+        if self.downsample is not None:
+            residual = self.downsample(x)
+
+        out += residual
+        out = self.relu(out)
+        return out
+
+
+
+class JointConvTransBlock(nn.Module):
+    def __init__(self, in_channels, embedding_dim, patch_size=16, num_heads=8, num_layer=4, depth=1):
+        """
+        Args:
+            in_channels (int): Number of channels in the input image.
+            embedding_dim (int): Dimensionality of the patch embeddings, and the output channel dimension.
+            patch_size (int): Size of the patch for the initial patch embedding.
+            num_heads (int): Number of attention heads for the transformer.
+            num_layer (int): Number of transformer encoder layers per block.
+            depth (int): Number of iterative blocks.
+        """
+        super(JointConvTransBlock, self).__init__()
+        self.patch_size = patch_size
+        self.depth = depth
+
+        # --- Patch Embedding & Positional Encoding (applied once) ---
+        self.embedding_convPxP = nn.Conv2d(in_channels, embedding_dim,
+                                           kernel_size=patch_size, stride=patch_size, padding=0)
+        # Learned positional encodings (assumed maximum number of tokens = 500; adjust if needed)
+        self.positional_encodings = nn.Parameter(torch.rand(2352, embedding_dim), requires_grad=True)
+
+        # --- Iterative Blocks ---
+        # In each block, both the transformer branch and conv branch output embedding_dim channels.
+        self.transformer_branches = nn.ModuleList()
+        self.conv_branches = nn.ModuleList()
+        self.fusion_convs = nn.ModuleList()
+        for _ in range(depth):
+            # Transformer branch: expects input of shape (seq_len, batch, d_model)
+            transformer_layer = nn.TransformerEncoderLayer(d_model=embedding_dim, nhead=num_heads, dim_feedforward=1024)
+            transformer_encoder = nn.TransformerEncoder(transformer_layer, num_layers=num_layer)
+            self.transformer_branches.append(transformer_encoder)
+            
+            # Convolution branch: outputs embedding_dim channels.
+            self.conv_branches.append(BasicBlock(embedding_dim, embedding_dim, ratio=4))
+            
+            # Fusion convolution: fuses concatenated features (2×embedding_dim channels) into embedding_dim channels.
+            self.fusion_convs.append(nn.Conv2d(embedding_dim * 2, embedding_dim,
+                                               kernel_size=1, stride=1, padding=0))
+
+    def forward(self, x):
+        """
+        Args:
+            x (Tensor): Input tensor with shape (B, in_channels, H, W)
+        Returns:
+            Tensor: Output tensor with shape (B, embedding_dim, H_out, W_out)
+        """
+        B = x.shape[0]
+        # --- Initial Patch Embedding & Positional Encoding ---
+        patch_embed = self.embedding_convPxP(x)  # (B, embedding_dim, H_p, W_p)
+        # print(patch_embed.shape)
+        B, D, H_p, W_p = patch_embed.shape  # Here D equals embedding_dim
+        num_patches = H_p * W_p
+
+        # Flatten spatial dimensions into a sequence: (B, num_patches, embedding_dim)
+        x_seq = patch_embed.flatten(2).transpose(1, 2)
+        # Add positional encodings (sliced to the number of patches)
+        # print(x_seq.shape)
+        x_seq = x_seq + self.positional_encodings[:num_patches, :].unsqueeze(0)
+
+        # --- Iterative Joint Blocks ---
+        for i in range(self.depth):
+            # Assemble sequence into a spatial map for the conv branch.
+            conv_input = x_seq.transpose(1, 2).view(B, D, H_p, W_p)
+            conv_out = self.conv_branches[i](conv_input)  # (B, embedding_dim, H_p, W_p)
+
+            # Transformer branch:
+            # Prepare sequence: transformer expects shape (num_patches, B, embedding_dim)
+            transformer_input = x_seq.transpose(0, 1)
+            transformer_out = self.transformer_branches[i](transformer_input)  # (num_patches, B, embedding_dim)
+            transformer_out = transformer_out.transpose(0, 1)  # (B, num_patches, embedding_dim)
+            # Assemble transformer output into a spatial map.
+            transformer_map = transformer_out.transpose(1, 2).view(B, D, H_p, W_p)
+
+            # Fuse branches: concatenate along channel dimension.
+            fused = torch.cat([conv_out, transformer_map], dim=1)  # (B, 2*embedding_dim, H_p, W_p)
+            fused = self.fusion_convs[i](fused)  # (B, embedding_dim, H_p, W_p)
+
+            # Flatten the fused output back into a sequence for the next iteration.
+            x_seq = fused.flatten(2).transpose(1, 2)
+
+        # --- Final Assembly ---
+        # Reassemble the final sequence back into a spatial map.
+        final_output = x_seq.transpose(1, 2).view(B, D, H_p, W_p)  # (B, embedding_dim, H_p, W_p)
+        return final_output

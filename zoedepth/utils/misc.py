@@ -273,7 +273,7 @@ def rmse_silog(predicted, ground_truth):
 #     log_10 = (np.abs(np.log10(gt) - np.log10(pred))).mean()
 #     return dict(a1=a1, a2=a2, a3=a3, abs_rel=abs_rel, rmse=rmse, log_10=log_10, rmse_log=rmse_log,
 #                 silog=silog, sq_rel=sq_rel)
-def compute_errors(gt, pred, sparse_gt,sparse_pred ):
+def compute_errors(gt, pred ):
     """Compute metrics for 'pred' compared to 'gt'
 
     Args:
@@ -300,8 +300,8 @@ def compute_errors(gt, pred, sparse_gt,sparse_pred ):
     if gt.size == 0:
         return None
     
-    if sparse_gt.size == 0:
-        return None
+    # if sparse_gt.size == 0:
+    #     return None
 
     # Threshold-based accuracy metrics
     thresh = np.maximum((gt / pred), (pred / gt))
@@ -314,7 +314,6 @@ def compute_errors(gt, pred, sparse_gt,sparse_pred ):
     sq_rel = np.mean(((gt - pred) ** 2) / gt)
 
     rmse = np.sqrt(((gt - pred) ** 2).mean())
-    rmse_log = np.sqrt((np.log(gt) - np.log(pred)) ** 2).mean()
     rmse_log = np.sqrt((np.log(gt) - np.log(pred)) ** 2).mean()  # Ensuring computation consistency
 
     # Alternatively, you might have a function for silog; here we assume it exists.
@@ -333,14 +332,14 @@ def compute_errors(gt, pred, sparse_gt,sparse_pred ):
     i_mae = np.mean(np.abs(inv_gt - inv_pred))
     i_abs_rel = np.mean(np.abs(inv_gt - inv_pred) / inv_gt)
 
-    sparse_abs_rel = np.mean(np.abs(sparse_gt - sparse_pred) / sparse_gt)
-    sparse_rmse = np.sqrt(((sparse_gt - sparse_pred) ** 2).mean())
-    sparse_mae = np.mean(np.abs(sparse_gt - sparse_pred))
-    inv_sparse_gt = 1.0 / sparse_gt
-    inv_sparse_pred = 1.0 / sparse_pred
-    sparse_i_rmse = np.sqrt(np.mean((inv_sparse_gt - inv_sparse_pred) ** 2))
-    sparse_i_mae = np.mean(np.abs(inv_sparse_gt - inv_sparse_pred))
-    sparse_i_abs_rel = np.mean(np.abs(inv_sparse_gt - inv_sparse_pred) / inv_sparse_gt)
+    # sparse_abs_rel = np.mean(np.abs(sparse_gt - sparse_pred) / sparse_gt)
+    # sparse_rmse = np.sqrt(((sparse_gt - sparse_pred) ** 2).mean())
+    # sparse_mae = np.mean(np.abs(sparse_gt - sparse_pred))
+    # inv_sparse_gt = 1.0 / sparse_gt
+    # inv_sparse_pred = 1.0 / sparse_pred
+    # sparse_i_rmse = np.sqrt(np.mean((inv_sparse_gt - inv_sparse_pred) ** 2))
+    # sparse_i_mae = np.mean(np.abs(inv_sparse_gt - inv_sparse_pred))
+    # sparse_i_abs_rel = np.mean(np.abs(inv_sparse_gt - inv_sparse_pred) / inv_sparse_gt)
 
     return dict(
         a1=a1,
@@ -356,16 +355,16 @@ def compute_errors(gt, pred, sparse_gt,sparse_pred ):
         iRMSE=i_rmse,
         iMAE=i_mae,
         iAbsRel=i_abs_rel,
-        sparse_abs_rel = sparse_abs_rel,
-        sparse_rmse = sparse_rmse,
-        sparse_mae=sparse_mae,
-        sparse_iRMSE=sparse_i_rmse,
-        sparse_iMAE=sparse_i_mae,
-        sparse_iAbsRel=sparse_i_abs_rel,
+        # sparse_abs_rel = sparse_abs_rel,
+        # sparse_rmse = sparse_rmse,
+        # sparse_mae=sparse_mae,
+        # sparse_iRMSE=sparse_i_rmse,
+        # sparse_iMAE=sparse_i_mae,
+        # sparse_iAbsRel=sparse_i_abs_rel,
     )
 
 
-def compute_metrics(gt, pred, sparse_mask = None, interpolate=True, garg_crop=False, eigen_crop=True, dataset='nyu', min_depth_eval=0.1, max_depth_eval=10, **kwargs):
+def compute_metrics(gt, pred, interpolate=True, garg_crop=False, eigen_crop=True, dataset='nyu', min_depth_eval=0.1, max_depth_eval=10, **kwargs):
     """Compute metrics of predicted depth maps. Applies cropping and masking as necessary or specified via arguments. Refer to compute_errors for more details on metrics.
     """
     if 'config' in kwargs:
@@ -387,9 +386,10 @@ def compute_metrics(gt, pred, sparse_mask = None, interpolate=True, garg_crop=Fa
 
     gt_depth = gt.squeeze().cpu().numpy()
 
-    sparse_mask = sparse_mask.squeeze().cpu().numpy()
-    new_dim = (480, 640)
-    sparse_mask = rescale_mask(sparse_mask, new_dim)
+    # if sparse_mask is not None:
+    #     sparse_mask = sparse_mask.squeeze().cpu().numpy()
+    #     new_dim = (480, 640)
+    #     sparse_mask = rescale_mask(sparse_mask, new_dim)
     
 
     valid_mask = np.logical_and(
@@ -423,10 +423,10 @@ def compute_metrics(gt, pred, sparse_mask = None, interpolate=True, garg_crop=Fa
     else:
         eval_mask = np.ones(valid_mask.shape)
     valid_mask = np.logical_and(valid_mask, eval_mask)
-    sparse_mask = np.logical_and(valid_mask, sparse_mask)
+    # sparse_mask = np.logical_and(valid_mask, sparse_mask)
 
 
-    return compute_errors(gt_depth[valid_mask], pred[valid_mask], gt_depth[sparse_mask], pred[sparse_mask])
+    return compute_errors(gt_depth[valid_mask], pred[valid_mask])
 
 def rescale_mask(old_mask, new_shape):
     old_rows, old_cols = old_mask.shape
@@ -452,7 +452,7 @@ def rescale_mask(old_mask, new_shape):
                 
     return new_mask
     
-def evaluation_on_ranges(gt, pred, sparse_mask = None, interpolate=True, dataset=None, evaluation_range = [18.0, 18, 18, 18, 18]):
+def evaluation_on_ranges(gt, pred, interpolate=True, dataset=None, evaluation_range = [18.0, 18, 18, 18, 18]):
     """Compute metrics of predicted depth maps. Applies cropping and masking as necessary or specified via arguments. Refer to compute_errors for more details on metrics.
     """
 
@@ -462,9 +462,9 @@ def evaluation_on_ranges(gt, pred, sparse_mask = None, interpolate=True, dataset
 
     gt_depth = gt.squeeze().cpu().numpy()
     
-    sparse_mask = sparse_mask.squeeze().cpu().numpy()
-    new_dim = (608, 968)
-    sparse_mask = rescale_mask(sparse_mask, new_dim)
+    # sparse_mask = sparse_mask.squeeze().cpu().numpy()
+    # new_dim = (608, 968)
+    # sparse_mask = rescale_mask(sparse_mask, new_dim)
     
     
     
@@ -492,7 +492,7 @@ def evaluation_on_ranges(gt, pred, sparse_mask = None, interpolate=True, dataset
         # non_zero_count = np.count_nonzero(valid_mask)
         # print("Number of non-zero values in valid_mask:", non_zero_count)
         
-        sparse_mask_temp = np.logical_and(valid_mask, sparse_mask)
+        # sparse_mask_temp = np.logical_and(valid_mask, sparse_mask)
         # non_zero_count = np.count_nonzero(sparse_mask_temp)
         # print("Number of non-zero values in sparse_mask:", non_zero_count)
         
@@ -515,7 +515,7 @@ def evaluation_on_ranges(gt, pred, sparse_mask = None, interpolate=True, dataset
         # plt.tight_layout()
         # plt.show()
 
-        dict = compute_errors(gt_depth[valid_mask], pred[valid_mask], gt_depth[sparse_mask_temp], pred[sparse_mask_temp])
+        dict = compute_errors(gt_depth[valid_mask], pred[valid_mask])
         result_dicts.append(dict)
     return result_dicts
     

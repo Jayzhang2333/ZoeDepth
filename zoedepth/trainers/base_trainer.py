@@ -74,6 +74,7 @@ class BaseTrainer:
         self.device = device
         self.model = model
         self.train_loader = train_loader
+        
         self.test_loader = test_loader
         self.optimizer = self.init_optimizer()
         num_param_groups = len(self.optimizer.param_groups)
@@ -84,17 +85,25 @@ class BaseTrainer:
     def print_learning_rates(self):
         """Prints learning rates for mViT and other parameters after initializing optimizer & scheduler."""
         m = self.model.module if self.config.multigpu else self.model
-        mvit_params = set(m.ScaleMapLearner.mViT.parameters())
+        if 'zoedepth' in self.config.name:
+            mvit_params = set(m.ScaleMapLearner.mViT.parameters())
 
-        print("\n=== Learning Rates After Initialization ===")
-        for i, param_group in enumerate(self.optimizer.param_groups):
-            lr = param_group['lr']
-            params = param_group['params']
+            print("\n=== Learning Rates After Initialization ===")
+            for i, param_group in enumerate(self.optimizer.param_groups):
+                lr = param_group['lr']
+                params = param_group['params']
 
-            if any(p in mvit_params for p in params):
-                print(f"Group {i}: Learning Rate for mViT = {lr}")
-            else:
-                print(f"Group {i}: Learning Rate for Other Parameters = {lr}")
+                if any(p in mvit_params for p in params):
+                    print(f"Group {i}: Learning Rate for mViT = {lr}")
+                else:
+                    print(f"Group {i}: Learning Rate for Other Parameters = {lr}")
+        else:
+            print("\n=== Learning Rates After Initialization ===")
+            for i, param_group in enumerate(self.optimizer.param_groups):
+                lr = param_group['lr']
+                group_name = param_group.get('name', f'Group {i}')  # uses 'name' if exists, else defaults to 'Group i'
+                print(f"Group {i} (name: {group_name}): Learning Rate = {lr}")
+
 
     def resize_to_target(self, prediction, target):
         if prediction.shape[2:] != target.shape[-2:]:

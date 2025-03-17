@@ -322,13 +322,13 @@ class ZoeDepth_conv_trans(DepthModel):
         # print(sparse_mask.dtype)
         sparse_feature = sparse_feature * sparse_mask
         sparse_feature = torch.where(sparse_feature == 0, sparse_feature, 1.0 / sparse_feature)
-        sparse_mask = sparse_feature>0
+        # sparse_mask = sparse_feature>0
         # print(f" relative depth shape is: {rel_depth.unsqueeze(1).shape}")
         # print(f" sparse feature shape is: {sparse_feature.shape}")
         estimator = LeastSquaresEstimatorTorch(rel_depth.unsqueeze(1), sparse_feature, sparse_mask)
         estimator.compute_scale_and_shift()  # find best scale & shift
         estimator.apply_scale_and_shift()    # apply them
-        estimator.clamp_min_max(clamp_min=self.min_depth, clamp_max=self.max_depth)
+        estimator.clamp_min_max(clamp_min=self.max_depth, clamp_max=self.min_depth)
         ga_result = estimator.output
 
         # use ones like or zeros like

@@ -53,6 +53,7 @@ from .vkitti2 import get_vkitti2_loader
 
 from .preprocess import CropParams, get_white_border, get_black_border
 import matplotlib.pyplot as plt
+from zoedepth.models.layers.global_alignment import AnchorInterpolator2D
 
 # def generate_feature_map_for_ga(feature_fp, original_height=480, original_width=640, new_height=480, new_width=640):
 #     # Read the CSV file
@@ -184,7 +185,7 @@ def resample_sparse_depth(depth_map, new_height, new_width):
     
     return new_depth_map
 
-def generate_feature_map_for_ga(feature_fp, original_height=480, original_width=640, new_height=384, new_width=512):
+def generate_feature_map_for_ga(feature_fp, original_height=480, original_width=640, new_height=336, new_width=448, inverse_depth = False):
     # Check the file extension to determine the delimiter
     file_extension = os.path.splitext(feature_fp)[-1].lower()
     
@@ -207,7 +208,10 @@ def generate_feature_map_for_ga(feature_fp, original_height=480, original_width=
         # Scale pixel coordinates to new image size
         pixel_row = int(row['row'] * scale_y)
         pixel_col = int(row.get('column', row.get('col', 0)) * scale_x)
+        
         depth_value = float(row['depth'])
+        if inverse_depth:
+            depth_value = 1.0/depth_value
 
         # Ensure the scaled coordinates are within the bounds of the new image size
         if 0 <= pixel_row < new_height and 0 <= pixel_col < new_width:
@@ -475,7 +479,7 @@ class DepthDataLoader(object):
             else:
                 self.eval_sampler = None
             self.data = DataLoader(self.testing_samples, 1,
-                                   shuffle=kwargs.get("shuffle_test", False),
+                                   shuffle=kwargs.get("shuffle_test", True),
                                    num_workers=1,
                                    pin_memory=False,
                                    sampler=self.eval_sampler)
@@ -665,12 +669,34 @@ class DataLoadPreprocess(Dataset):
                 # sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=288, new_width=384)
                 sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=self.config.input_height, new_width=self.config.input_width)
                 # sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
-            elif (self.config.name == 'ZoeDepth_sparse_feature_fusion' or self.config.name == 'ZoeDepth_videpth'or self.config.name == 'ZoeDepth_conv_trans') and  (feature_path.lower().endswith('.csv') or feature_path.lower().endswith('.txt')):
-
-                sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=288, new_width=384)
-                if random.random() < 0.5:
-                    # print("train with lower 1/3")
-                    sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
+            elif (self.config.name == 'videpth_spn'  or self.config.name == 'PromptDA' or self.config.name == 'ZoeDepth_sparse_feature_fusion' 
+                  or self.config.name == 'ZoeDepth_videpth'or self.config.name == 'ZoeDepth_conv_trans'
+                  or self.config.name == 'AffinityDC' or self.config.name == 'DA_SML') and  (feature_path.lower().endswith('.csv') or feature_path.lower().endswith('.txt')):
+                # print(self.config.img_size)
+                inverse_depth = False
+                if self.config.name == 'PromptDA':
+                    inverse_depth = True
+                # print(self.config.sparse_feature_height)
+                # print(self.config.sparse_feature_width)
+                # print(self.config.img_size)
+                sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=self.config.img_size[0], new_width=self.config.img_size[1], inverse_depth=inverse_depth)
+                
+                if self.config.name == 'PromptDA':
+                    mask = sparse_feature_map >0
+                    ResidualMapInterpolator = AnchorInterpolator2D(
+                        sparse_depth = sparse_feature_map,
+                        valid = mask,
+                    )
+                    ResidualMapInterpolator.generate_interpolated_scale_map(
+                        interpolate_method='linear', 
+                        fill_corners=False
+                    )
+                    sparse_feature_map = ResidualMapInterpolator.interpolated_scale_map.astype(np.float32)
+                    sparse_feature_map = np.expand_dims(sparse_feature_map, axis=-1)
+                   
+                # if random.random() < 0.5:
+                #     # print("train with lower 1/3")
+                #     sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
                 # sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
             elif feature_path.lower().endswith('.png'):
                 # print('sparse points divide by 256')
@@ -812,11 +838,31 @@ class DataLoadPreprocess(Dataset):
                 # print(f"input height {self.config.input_height}, input width: {self.config.input_width}")
                 # sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=288, new_width=384)
                 sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=self.config.input_height, new_width=self.config.input_width)
-                sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
-            
-            elif (self.config.name == 'ZoeDepth_sparse_feature_fusion' or self.config.name == 'ZoeDepth_videpth' or self.config.name == 'ZoeDepth_conv_trans') and  (feature_path.lower().endswith('.csv') or feature_path.lower().endswith('.txt')):
-                sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=288, new_width=384)
                 # sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
+            
+            elif (self.config.name == 'videpth_spn'  or self.config.name == 'PromptDA' or self.config.name == 'ZoeDepth_sparse_feature_fusion' 
+                  or self.config.name == 'ZoeDepth_videpth'or self.config.name == 'ZoeDepth_conv_trans'
+                  or self.config.name == 'AffinityDC' or self.config.name == 'DA_SML') and  (feature_path.lower().endswith('.csv') or feature_path.lower().endswith('.txt')):
+                inverse_depth = False
+                if self.config.name == 'PromptDA':
+                    inverse_depth = True
+                # print(self.config.sparse_feature_height)
+                # print(self.config.sparse_feature_width)
+                # print(self.config.img_size)
+                sparse_feature_map = generate_feature_map_for_ga(feature_path, original_height=self.config.sparse_feature_height, original_width=self.config.sparse_feature_width, new_height=self.config.img_size[0], new_width=self.config.img_size[1], inverse_depth=inverse_depth)
+                # sparse_feature_map = filter_lower_33_percent(sparse_feature_map)
+                if self.config.name == 'PromptDA':
+                    mask = sparse_feature_map >0
+                    ResidualMapInterpolator = AnchorInterpolator2D(
+                        sparse_depth = sparse_feature_map,
+                        valid = mask,
+                    )
+                    ResidualMapInterpolator.generate_interpolated_scale_map(
+                        interpolate_method='linear', 
+                        fill_corners=False
+                    )
+                    sparse_feature_map = ResidualMapInterpolator.interpolated_scale_map.astype(np.float32)
+                    sparse_feature_map = np.expand_dims(sparse_feature_map, axis=-1)
                 
             
             elif feature_path.lower().endswith('.png'):
@@ -1004,7 +1050,7 @@ class DataLoadPreprocess(Dataset):
 
 
 class ToTensor(object):
-    def __init__(self, mode, do_normalize=False, size=None, use_ga = False):
+    def __init__(self, mode, do_normalize=False, size=None, use_ga = False, multiple_of = 1):
         self.mode = mode
         self.use_ga = use_ga
         self.normalize = transforms.Normalize(
