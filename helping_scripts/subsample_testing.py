@@ -1,15 +1,15 @@
 import random
 
 # Input and output file paths
-input_file = "train_test_inputs/tartanair/tartanair_testing_swap_filtered_no_ocean_soulcity.txt"  # Replace with your file path
-output_file = "train_test_inputs/tartanair/tartanair_testing_swap_filtered_no_ocean_soulcity_subsampled.txt"
+input_file = "/media/jay/Marine1/archive/red_sea/cross_pyramid_loop/filtered_dataset_index_updated_path.txt"  # Replace with your file path
+output_file = "/media/jay/Marine1/archive/red_sea/cross_pyramid_loop/sub_filtered_dataset_index_updated_path.txt"
 
 # Read all lines from the input file
 with open(input_file, "r") as f:
     lines = f.readlines()
 
 # Calculate 10% of the total lines
-num_lines_to_select = max(1, int(0.05 * len(lines)))
+num_lines_to_select = max(1, int(0.4 * len(lines)))
 
 # Randomly select 10% of the lines
 selected_lines = random.sample(lines, num_lines_to_select)

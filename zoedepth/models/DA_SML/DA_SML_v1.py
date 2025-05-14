@@ -115,7 +115,7 @@ class DA_SML(DepthModel):
         super().__init__()
 
         self.min_pred = 0.1
-        self.max_pred = 20.0
+        self.max_pred = 25.0
         self.min_pred_inv = 1.0/self.min_pred
         self.max_pred_inv = 1.0/self.max_pred
         self.train_dino = kwargs['train_dino']
@@ -166,7 +166,7 @@ class DA_SML(DepthModel):
             print(f'Checkpoint {ckpt_path} not found')
 
 
-    def forward(self, x, prompt_depth=None):
+    def forward(self, x, prompt_depth=None, image_no_norm = None):
         assert prompt_depth is not None, 'prompt_depth is required'
 
         # prompt_depth, min_val, max_val = self.normalize(prompt_depth)
@@ -219,6 +219,7 @@ class DA_SML(DepthModel):
             GlobalAlignment.compute_scale_and_shift()
             # GlobalAlignment.compute_scale()
             GlobalAlignment.apply_scale_and_shift()
+            # GlobalAlignment.apply_scale()
             GlobalAlignment.clamp_min_max(clamp_min=self.min_pred, clamp_max=self.max_pred)
             
             # Store the output depth map

@@ -112,6 +112,8 @@ class TransformerStage(nn.Module):
             # Attention block.
             residual = x
             x, pos, ref = self.attns[d](self.layer_norms[2 * d](x))
+            # print(pos.shape)
+            # print(ref.shape)
             x = self.layer_scales[2 * d](x)
             x = self.drop_path[d](x) + residual
             
@@ -180,10 +182,37 @@ class FillConv(nn.Module):
 
         return f
 
+import matplotlib.pyplot as plt
+def display_feature_maps(feature_maps):
+    """
+    Displays all feature maps in a batch.
+    
+    Args:
+        feature_maps (torch.Tensor): Tensor of shape [B, C, H, W].
+    """
+    B, C, H, W = feature_maps.shape
+    for b in range(B):
+        # Create a row of subplots for the b-th sample in the batch
+        fig, axes = plt.subplots(1, C, figsize=(C * 2, 2))
+        
+        # When there's only one channel, axes may not be iterable
+        if C == 1:
+            axes = [axes]
+            
+        for c in range(C):
+            # Detach the tensor, move it to CPU, and convert to numpy array
+            feature_map = feature_maps[b, c].cpu().detach().numpy()
+            axes[c].imshow(feature_map, cmap='viridis')
+            axes[c].set_title(f'Batch {b} - Channel {c}')
+            axes[c].axis('off')
+            
+        plt.tight_layout()
+        plt.show()
+
 
 class DAT(nn.Module):
     def __init__(self, img_size=(336,448), patch_size=4, expansion=4,
-                 dim_stem=96, dims=[96, 128, 256, 512], depths=[1, 1, 2, 2], 
+                 dim_stem=96, dims=[96, 128, 256, 512], depths_conv=[1, 1, 2, 2], depths_trans=[1, 1, 2, 2], 
                  heads=[2, 4, 8, 16], stages = 4, conv_ratios = [8,8,8,8],
                  drop_rate=0.0, attn_drop_rate=0.0, drop_path_rate=0.2, 
                  strides=[8, 4, 2, 1],
@@ -207,6 +236,9 @@ class DAT(nn.Module):
         # GA nas sparse scale embedding layers
         self.conv1_ga = conv_bn_relu(1, 16, kernel=3, stride=1, padding=1,
                                           bn=False)
+        
+        # self.conv1_gradient = conv_bn_relu(1, 16, kernel=3, stride=1, padding=1,
+        #                                   bn=False)
         
         self.conv1_scale = conv_bn_relu(1, 16, kernel=3, stride=1, padding=1,
                                           bn=False)
@@ -244,7 +276,7 @@ class DAT(nn.Module):
 
         # --- Compute drop path rate for each stage ---
         # Here we use one drop path value per stage.
-        dpr_ts = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]
+        dpr_ts = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths_trans))]
 
         # --- Build Big Blocks ---
         # Each big block consists of:
@@ -257,7 +289,7 @@ class DAT(nn.Module):
         # Stage 0: works on the raw image.
         stage0 = nn.Sequential(
             # BasicBlock stack (assumed to work on 3-channel input)
-            *[BasicBlock(64, 64, ratio=conv_ratios[0]) for _ in range(depths[0])],
+            *[BasicBlock(64, 64, ratio=conv_ratios[0]) for _ in range(depths_conv[0])],
             # Patch embedding for stage 0
             self.patch_proj,
             # TransformerStage: for stage0, project from dim_stem -> dims[0]
@@ -265,7 +297,7 @@ class DAT(nn.Module):
                 fmap_size=current_img_size,
                 dim_in=dim_stem,
                 dim_embed=dims[0],
-                depths=depths[0],
+                depths=depths_trans[0],
                 n_groups=groups[0],
                 use_pe=use_pes[0],
                 heads=heads[0],
@@ -278,7 +310,7 @@ class DAT(nn.Module):
                 proj_drop=drop_rate,
                 expansion=expansion,
                 drop=drop_rate,
-                drop_path_rate=dpr_ts[sum(depths[:0]):sum(depths[:0 + 1])],
+                drop_path_rate=dpr_ts[sum(depths_trans[:0]):sum(depths_trans[:0 + 1])],
                 use_dwc_mlp=use_dwc_mlps[0],
                 ksize=ksizes[0],
                 layer_scale_value=layer_scale_values[0],
@@ -296,7 +328,7 @@ class DAT(nn.Module):
             print(current_img_size)
             stage = nn.Sequential(
                 # BasicBlock stack (assumed to work on feature maps with basic_in channels)
-                *[BasicBlock(basic_in, basic_in, ratio=conv_ratios[i]) for _ in range(depths[i])],
+                *[BasicBlock(basic_in, basic_in, ratio=conv_ratios[i]) for _ in range(depths_conv[i])],
                 # Down projection for patch embedding
                 self.down_projs[i - 1],
                 # TransformerStage: for later stages, project from basic_in*2 -> dims[i]
@@ -305,7 +337,7 @@ class DAT(nn.Module):
                     # dim_in=basic_in * 2, # don't really knwo why it needs to be like this
                     dim_in = dims[i],
                     dim_embed=dims[i],
-                    depths=depths[i],
+                    depths=depths_trans[i],
                     n_groups=groups[i],
                     use_pe=use_pes[i],
                     heads=heads[i],
@@ -318,7 +350,7 @@ class DAT(nn.Module):
                     proj_drop=drop_rate,
                     expansion=expansion,
                     drop=drop_rate,
-                    drop_path_rate=dpr_ts[sum(depths[:i]):sum(depths[:i + 1])],
+                    drop_path_rate=dpr_ts[sum(depths_trans[:i]):sum(depths_trans[:i + 1])],
                     use_dwc_mlp=use_dwc_mlps[i],
                     ksize=ksizes[i],
                     layer_scale_value=layer_scale_values[i],
@@ -341,11 +373,15 @@ class DAT(nn.Module):
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
 
-    def forward(self, ga, scale, fused_feature):
+    def forward(self, ga, scale, featrues):
         ga_embedding = self.conv1_ga(ga)
         scale_embedding = self.conv1_scale(scale)
+        # gradient_embedding = self.conv1_gradient(gradient)
+        # display_feature_maps(ga_embedding)
+        # display_feature_maps(scale_embedding)
+        # display_feature_maps(gradient_embedding)
         # filled_scale = self.fill_conv_ga_sparse(ga, scale)
-        x = torch.cat((ga_embedding, scale_embedding, fused_feature), dim=1)
+        x = torch.cat((ga_embedding, scale_embedding, featrues), dim=1)
         x = self.conv1(x)
         outputs = []
         for stage in self.big_blocks:

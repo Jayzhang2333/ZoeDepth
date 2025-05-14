@@ -971,7 +971,9 @@ class DPTHeadCustomised3(nn.Module):
 
             out.append(x)
 
+
         layer_1, layer_2, layer_3, layer_4 = out
+       
         # featrues = [layer_1, layer_2, layer_3, layer_4]
         
         layer_1_rn = self.scratch.layer1_rn(layer_1)
@@ -992,5 +994,5 @@ class DPTHeadCustomised3(nn.Module):
         rel_depth = self.scratch.output_conv2(out_feat)
 
         featrues = [path_1, path_2, path_3, path_4]
-       
+        
         return rel_depth, featrues

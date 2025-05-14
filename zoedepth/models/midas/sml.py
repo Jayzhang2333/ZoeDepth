@@ -23,6 +23,92 @@ import matplotlib.pyplot as plt
 #         m.weight.data.fill_(1)
 #         m.bias.data.zero_()
 
+def show_images(tensor_images):
+    tensor_images = tensor_images.detach().cpu().numpy()  # Convert to numpy if tensor
+    tensor_images = np.transpose(tensor_images, (0, 2, 3, 1))  # Change from CHW to HWC
+    
+    # Display the images
+    batch_size = tensor_images.shape[0]
+    fig, axes = plt.subplots(1, batch_size, figsize=(15, 5))  # Adjust number of subplots as needed
+    if batch_size == 1:  # Handle case where batch size is 1
+        axes = [axes]
+    
+    for idx in range(batch_size):
+        axes[idx].imshow(tensor_images[idx])  # Assuming images are normalized [0, 1]
+        axes[idx].axis('off')
+    
+    plt.show()
+
+
+
+def display_feature_heatmap(feature_tensor, batch_index=0):
+    """
+    Displays a feature heatmap for a given tensor with shape (B, C, H, W).
+    
+    Parameters:
+        feature_tensor (torch.Tensor): A tensor of shape (batch_size, channels, height, width)
+            containing the feature maps.
+        batch_index (int): Index of the sample in the batch to display (default: 0).
+    
+    The function performs the following steps:
+      1. Selects the sample from the batch.
+      2. Sums the feature maps along the channel dimension.
+      3. Normalizes the resulting 2D tensor to the range (0, 1).
+      4. Displays the heatmap using matplotlib with a colorbar.
+    """
+    # Select the sample from the batch
+    sample = feature_tensor[batch_index]
+    
+    # Sum along the channel dimension (C -> 1)
+    heatmap = torch.sum(sample, dim=0)
+    
+    # Normalize the heatmap to the range (0, 1)
+    heatmap_min = torch.min(heatmap)
+    heatmap_max = torch.max(heatmap)
+    normalized_heatmap = (heatmap - heatmap_min) / (heatmap_max - heatmap_min)
+    
+    # Convert to numpy array for display (handles GPU tensors as well)
+    heatmap_np = normalized_heatmap.cpu().numpy()
+    
+    # Display the heatmap
+    plt.imshow(heatmap_np, cmap='gray')
+    plt.colorbar(label='Normalized intensity')
+    plt.title(f"Feature Heatmap (Batch Index {batch_index})")
+    plt.axis('off')  # Optionally hide the axes
+    plt.show()
+
+
+def display_feature_and_secondary_heatmap(feature_tensor, secondary_tensor, batch_index=0, cmap_feature='gray', cmap_secondary='gray'):
+    """
+    Displays feature heatmap and secondary heatmap side by side for a given batch index.
+
+    Args:
+        feature_tensor (torch.Tensor): Shape [B, 1, H, W]
+        secondary_tensor (torch.Tensor): Shape [B, 1, H, W]
+        batch_index (int): Index of the batch to display
+        cmap_feature (str): Colormap for the feature tensor
+        cmap_secondary (str): Colormap for the secondary tensor
+    """
+    assert feature_tensor.dim() == 4 and secondary_tensor.dim() == 4, "Both tensors must be of shape [B, 1, H, W]"
+    assert feature_tensor.shape[0] > batch_index and secondary_tensor.shape[0] > batch_index, "Batch index out of range"
+
+    feature_map = feature_tensor[batch_index, 0].cpu().detach().numpy()
+    secondary_map = secondary_tensor[batch_index, 0].cpu().detach().numpy()
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    ax = axes[0]
+    im1 = ax.imshow(feature_map, cmap=cmap_feature)
+    ax.set_title(f'Feature Heatmap (Batch {batch_index})')
+    plt.colorbar(im1, ax=ax, fraction=0.046, pad=0.04)
+
+    ax = axes[1]
+    im2 = ax.imshow(secondary_map, cmap=cmap_secondary)
+    ax.set_title(f'Secondary Heatmap (Batch {batch_index})')
+    plt.colorbar(im2, ax=ax, fraction=0.046, pad=0.04)
+
+    plt.tight_layout()
+    plt.show()
 
 class SMLCBAM(BaseModel):
     """Network for monocular depth estimation.
@@ -92,6 +178,7 @@ class SMLCBAM(BaseModel):
             tensor: depth
         """
         fused_feature = self.multi_feature_fusion(features)
+        
         
 
 
@@ -200,10 +287,19 @@ class SMLDeformableAttention(BaseModel):
             tensor: depth
         """
         fused_feature = self.multi_feature_fusion(features)
+        # display_feature_heatmap(fused_feature)
         
 
 
         layer_1, layer_2, layer_3, layer_4 = self.encoder(ga, scale, fused_feature)
+
+        # display_feature_and_secondary_heatmap(layer_4, F.interpolate(scale, layer_4.shape[2:], mode="bilinear", align_corners=True))
+        # display_feature_and_secondary_heatmap(layer_3, F.interpolate(scale, layer_3.shape[2:], mode="bilinear", align_corners=True))
+        # display_feature_and_secondary_heatmap(layer_2, F.interpolate(scale, layer_2.shape[2:], mode="bilinear", align_corners=True))
+        # display_feature_and_secondary_heatmap(layer_1, F.interpolate(scale, layer_1.shape[2:], mode="bilinear", align_corners=True))
+        
+        
+
 
         
         

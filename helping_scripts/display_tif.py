@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # # Assuming the depth map is stored in a file called 'depth_map.tif'
-input_sparse_depth_fp = '/media/jay/Lexar/SeaThru/sea_thru/D1/D1/depth/depthT_S02951.tif'
+input_sparse_depth_fp = '/media/jay/Marine1/archive/red_sea/northeast_path/depth/16315111056117096_SeaErra_abs_depth.tif'
 depth_map_array = np.array(Image.open(input_sparse_depth_fp), dtype=np.float32)
 print(np.max(depth_map_array))
 print(np.min(depth_map_array))

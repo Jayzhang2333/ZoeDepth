@@ -26,7 +26,8 @@ import torch
 import torch.cuda.amp as amp
 import torch.nn as nn
 
-from zoedepth.trainers.loss import GradL1Loss, SILogLoss, RMSELoss, L1SmoothLoss, NegativeLogLikelihoodLoss, InvNegativeLogLikelihoodLoss, InvRMSELoss, InvSILogLoss
+from zoedepth.trainers.loss import GradL1Loss, SILogLoss, RMSELoss, L1SmoothLoss, NegativeLogLikelihoodLoss, InvNegativeLogLikelihoodLoss, \
+    InvRMSELoss, InvSILogLoss, MultiScaleInverseGradL1Loss,Sobel,SobelGradAndNormalLoss, VNL_Loss
 from zoedepth.utils.config import DATASETS_CONFIG
 from zoedepth.utils.misc import compute_metrics
 from zoedepth.data.preprocess import get_black_border
@@ -114,7 +115,11 @@ class Trainer(BaseTrainer):
         self.silog_loss = InvSILogLoss()
         # self.grad_loss = GradL1Loss()
         self.rmse_loss = InvRMSELoss()
+        # self.grad_nrom_loss = SobelGradAndNormalLoss()
+        # self.vn_loss = VNL_Loss(320.0, 320.0, (480, 640))
+        # self.sobel = Sobel().cuda()
         # self.NegLogLikelihood_loss = InvNegativeLogLikelihoodLoss()
+        # self.inv_gradient_loss = MultiScaleInverseGradL1Loss()
         self.scaler = amp.GradScaler(enabled=self.config.use_amp)
         self.dataset = config.dataset
         # if self.dataset == 'tartanair':
@@ -135,7 +140,8 @@ class Trainer(BaseTrainer):
 
         b, c, h, w = images.size()
         mask = batch["mask"].to(self.device).to(torch.bool)
-        # show_images_three_sources(images, depths_gt, sparse_features)
+        # show_images_three_sources(images, depths_gt, mask)
+        # breakpoint()
         losses = {}
     
         # print(f"image shape is {images.shape}")
@@ -153,6 +159,7 @@ class Trainer(BaseTrainer):
             pred_inverse_depths = output['inverse_depth']
             # show_images_three_sources(images, pred_depths, sparse_features)
             # breakpoint()
+
             
             # intermedian_pred_depths = output['intermedian_pred']
             # print(pred_depths[0].shape)
@@ -167,6 +174,17 @@ class Trainer(BaseTrainer):
             l_rmse= self.rmse_loss(
                 pred_inverse_depths, depths_gt, mask=mask, interpolate=True)
             
+            # l_grad = self.grad_nrom_loss(
+            #     pred_depths, depths_gt, mask=mask, interpolate=True)
+            
+
+            # l_vn = self.vn_loss(
+            #     pred_depths, depths_gt, mask=mask, interpolate=True)
+            # print(l_vn)
+            # breakpoint()
+            
+            # l_inv_gradient = self.inv_gradient_loss(pred_inverse_depths, depths_gt, mask=mask, interpolate=True)
+            
             # if self.dataset == 'tartanair':
             #     l_l1smooth = self.l1smooth_loss(
             #     pred_depths, depths_gt, mask=mask, interpolate=True)
@@ -175,11 +193,15 @@ class Trainer(BaseTrainer):
             #     intermedian_pred_depths, depths_gt, mask=mask, interpolate=True)
 
             if self.dataset == 'tartanair':
-                loss = + self.config.w_si*l_si + self.config.w_rmse*l_rmse #+ self.config.w_l1smooth*l_l1smooth #+ self.config.w_si_intermedian*l_si_intermedian #+ self.config.w_rmse_intermedian*l_rmse_intermedian
+                loss =  self.config.w_si*l_si + self.config.w_rmse*l_rmse #+ self.config.w_vn*l_vn#+ self.config.w_gradient*l_grad # + self.config.w_nrom*l_nrom 
             else:
-                loss = + self.config.w_si*l_si + self.config.w_rmse * l_rmse #+ self.config.w_si_intermedian * l_si_intermedian + self.config.w_rmse_intermedian * l_rmse_intermedian
+                loss =  self.config.w_si*l_si + self.config.w_rmse * l_rmse# + self.config.w_vn*l_vn #+ self.config.w_gradient*l_grad # + self.config.w_nrom*l_nrom 
             losses[self.silog_loss.name] = l_si
             losses[self.rmse_loss.name] = l_rmse
+            # losses['l_gradient_metric'] = l_grad
+            # losses['l_vn'] = l_vn
+            # losses['l_normal_metric'] = l_nrom
+            # losses[self.inv_gradient_loss.name] = l_inv_gradient
             # losses['l_nll'] = l_nll
 
             # if self.dataset == 'tartanair':
@@ -301,11 +323,21 @@ class Trainer(BaseTrainer):
             
             l_rmse = self.rmse_loss(
                 pred_depths_inverse, depths_gt, mask=mask.to(torch.bool), interpolate=True)
+            
+            # l_grad = self.grad_nrom_loss(
+            #     pred_depths, depths_gt, mask=mask, interpolate=True)
+            # l_vn = self.vn_loss(
+            #     pred_depths, depths_gt, mask=mask, interpolate=True)
 
         valid_points_mask = (sparse_feature >= self.config.min_depth) & (sparse_feature <= self.config.max_depth)
         metrics = compute_metrics(depths_gt, pred_depths,sparse_mask=valid_points_mask, **self.config)
         losses = {f"{self.silog_loss.name}": l_depth.item()}
         losses[self.rmse_loss.name] = l_rmse
+        # losses['l_gradient_metric'] = l_grad
+        # losses['l_vn'] = l_vn
+        # losses['l_normal_metric'] = l_nrom
+
+
 
         if val_step == 1 and self.should_log:
             depths_gt[torch.logical_not(mask)] = -99

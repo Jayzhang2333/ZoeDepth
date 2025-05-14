@@ -214,7 +214,9 @@ def generate_feature_map_for_ga(feature_fp, original_height=480, original_width=
             depth_value = 1.0/depth_value
 
         # Ensure the scaled coordinates are within the bounds of the new image size
+         
         if 0 <= pixel_row < new_height and 0 <= pixel_col < new_width:
+            
             sparse_depth_map[pixel_row, pixel_col] = depth_value
 
     sparse_depth_map = sparse_depth_map[..., np.newaxis]
@@ -479,7 +481,7 @@ class DepthDataLoader(object):
             else:
                 self.eval_sampler = None
             self.data = DataLoader(self.testing_samples, 1,
-                                   shuffle=kwargs.get("shuffle_test", True),
+                                   shuffle=kwargs.get("shuffle_test", False),
                                    num_workers=1,
                                    pin_memory=False,
                                    sampler=self.eval_sampler)
@@ -864,6 +866,9 @@ class DataLoadPreprocess(Dataset):
                     sparse_feature_map = ResidualMapInterpolator.interpolated_scale_map.astype(np.float32)
                     sparse_feature_map = np.expand_dims(sparse_feature_map, axis=-1)
                 
+                if self.config.dataset == 'lizard_sparse_feature':
+                    sparse_feature_map = sparse_feature_map/1.44
+                    
             
             elif feature_path.lower().endswith('.png'):
                 sparse_feature_map = np.asarray(self.reader.open(feature_path))/256.0
@@ -905,7 +910,8 @@ class DataLoadPreprocess(Dataset):
                     
                     if self.config.dataset == 'nyu' or self.config.dataset == 'nyu_sparse_feature':
                         depth_gt = depth_gt / 1000.0
-                    elif self.config.dataset == "flsea_sparse_feature" or self.config.dataset == "lizard_sparse_feature" or self.config.dataset == 'diode_sparse_feature' or self.config.dataset == 'tartanair':
+                    elif self.config.dataset == "flsea_sparse_feature" or self.config.dataset == "lizard_sparse_feature" or self.config.dataset == 'diode_sparse_feature' or self.config.dataset == 'tartanair' \
+                    or self.config.dataset == 'reach_tank_sparse_feature' or self.config.dataset == 'sea_thru' or self.config.dataset == 'turbid_test' or self.config.dataset == 'cape_don':
                         depth_gt = depth_gt / 1.0
 
                     else:
@@ -1050,7 +1056,7 @@ class DataLoadPreprocess(Dataset):
 
 
 class ToTensor(object):
-    def __init__(self, mode, do_normalize=False, size=None, use_ga = False, multiple_of = 1):
+    def __init__(self, mode, do_normalize=True, size=None, use_ga = False, multiple_of = 1):
         self.mode = mode
         self.use_ga = use_ga
         self.normalize = transforms.Normalize(
@@ -1070,8 +1076,12 @@ class ToTensor(object):
         image, focal, sparse_feature_map = sample['image'], sample['focal'],sample['sparse_map']
         # print(f"image shape before to tensor {np.shape(image)}")
         image = self.to_tensor(image)
+        image_no_norm = self.resize(image)
         image = self.normalize(image)
         image = self.resize(image)
+        # print(image.shape)
+        # show_images_two_sources(image_normal.unsqueeze(0), image.unsqueeze(0))
+        # print("Image normlaised")
         # print(f"image shape after to tensor {image.shape}")
 
         # print(f"image shape after to tensor: {image.shape}")
@@ -1118,8 +1128,8 @@ class ToTensor(object):
             return {**sample, 'image': image, 'depth': depth, 'sparse_map':sparse_feature_map, 'focal': focal}
         else:
             has_valid_depth = sample['has_valid_depth']
-            image = self.resize(image)
-            return {**sample, 'image': image, 'depth': depth, 'focal': focal, 'sparse_map':sparse_feature_map, 'has_valid_depth': has_valid_depth,
+            # image = self.resize(image)
+            return {**sample, 'image': image, 'image_no_norm':image_no_norm, 'depth': depth, 'focal': focal, 'sparse_map':sparse_feature_map, 'has_valid_depth': has_valid_depth,
                     'image_path': sample['image_path'], 'depth_path': sample['depth_path'], 'depth_path': sample['depth_path'], 'feature_path':sample['feature_path']}
 
     def to_tensor(self, pic):
@@ -1153,3 +1163,84 @@ class ToTensor(object):
             return img.float()
         else:
             return img
+        
+
+import numpy as np  
+import matplotlib.pyplot as plt
+
+
+def show_images(tensor_images):
+    tensor_images = tensor_images.detach().cpu().numpy()  # Convert to numpy if tensor
+    tensor_images = np.transpose(tensor_images, (0, 2, 3, 1))  # Change from CHW to HWC
+    
+    # Display the images
+    batch_size = tensor_images.shape[0]
+    fig, axes = plt.subplots(1, batch_size, figsize=(15, 5))  # Adjust number of subplots as needed
+    if batch_size == 1:  # Handle case where batch size is 1
+        axes = [axes]
+    
+    for idx in range(batch_size):
+        im = axes[idx].imshow(tensor_images[idx], cmap='inferno')
+        axes[idx].axis('off')
+        # Add a colorbar to the current subplot
+        fig.colorbar(im, ax=axes[idx])
+        
+    
+    plt.show()
+
+
+def show_images_two_sources(source1, source2):
+    """
+    Display images from two sources side by side in a row.
+    
+    Args:
+        source1, source2: Two input tensors or numpy arrays of images.
+                          Expected shapes: (N, C, H, W) for tensors.
+    """
+    def preprocess_images(source):
+        if isinstance(source, np.ndarray):
+            images = source
+        else:  # Assume tensor
+            images = source.detach().cpu().numpy()
+        images = np.transpose(images, (0, 2, 3, 1))  # Convert from CHW to HWC
+        return images
+
+    # Preprocess both sources
+    images1 = preprocess_images(source1)
+    images2 = preprocess_images(source2)
+
+    # Ensure the batch sizes match
+    assert images1.shape[0] == images2.shape[0], "Batch sizes must match."
+
+    batch_size = images1.shape[0]
+    fig, axes = plt.subplots(batch_size, 2, figsize=(10, 5 * batch_size))  # 2 columns for sources
+
+    if batch_size == 1:  # Handle case where batch size is 1
+        axes = [axes]
+
+    # for idx in range(batch_size):
+    #     # Display source1 image
+    #     axes[idx][0].imshow(images1[idx])
+    #     axes[idx][0].set_title("Source 1")
+    #     axes[idx][0].axis('off')
+
+    #     # Display source2 image
+    #     axes[idx][1].imshow(images2[idx])
+    #     axes[idx][1].set_title("Source 2")
+    #     axes[idx][1].axis('off')
+    for idx in range(batch_size):
+        # Display source1 image
+        im1 = axes[idx][0].imshow(images1[idx])
+        axes[idx][0].set_title("Image")
+        axes[idx][0].axis('off')
+        # plt.colorbar(im1, ax=axes[idx][0], fraction=0.046, pad=0.04)
+
+        # Display source2 image
+        im2 = axes[idx][1].imshow(images2[idx],cmap='inferno')
+        axes[idx][1].set_title("Metric Depth Prediction")
+        axes[idx][1].axis('off')
+        # plt.colorbar(im2, ax=axes[idx][1], fraction=0.046, pad=0.04)
+
+    plt.tight_layout()
+    plt.show()
+

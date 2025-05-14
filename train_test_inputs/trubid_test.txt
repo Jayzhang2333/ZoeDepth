@@ -1,0 +1,1 @@
+/home/jay/Downloads/first_100_cropped_resized/00002.png /home/jay/Downloads/first_100_cropped_resized/depth_00002.tif /home/jay/ZoeDepth/rope_filtered_depth_points.csv
