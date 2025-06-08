@@ -73,19 +73,33 @@ def show_images_two_sources(source1, source2):
     if batch_size == 1:  # Handle case where batch size is 1
         axes = [axes]
 
+    # for idx in range(batch_size):
+    #     # Display source1 image
+    #     axes[idx][0].imshow(images1[idx])
+    #     axes[idx][0].set_title("Source 1")
+    #     axes[idx][0].axis('off')
+
+    #     # Display source2 image
+    #     axes[idx][1].imshow(images2[idx])
+    #     axes[idx][1].set_title("Source 2")
+    #     axes[idx][1].axis('off')
     for idx in range(batch_size):
         # Display source1 image
-        axes[idx][0].imshow(images1[idx])
-        axes[idx][0].set_title("Source 1")
+        im1 = axes[idx][0].imshow(images1[idx])
+        axes[idx][0].set_title("RGB Image")
         axes[idx][0].axis('off')
+        # plt.colorbar(im1, ax=axes[idx][0], fraction=0.046, pad=0.04)
 
         # Display source2 image
-        axes[idx][1].imshow(images2[idx])
-        axes[idx][1].set_title("Source 2")
+        #,cmap='Spectral'
+        im2 = axes[idx][1].imshow(images2[idx], cmap = 'viridis_r')
+        axes[idx][1].set_title("Metric Depth Prediction")
         axes[idx][1].axis('off')
+        plt.colorbar(im2, ax=axes[idx][1], fraction=0.046, pad=0.04)
 
     plt.tight_layout()
     plt.show()
+
 
 def show_images(tensor_images):
     tensor_images = tensor_images.detach().cpu().numpy()  # Convert to numpy if tensor
@@ -115,7 +129,7 @@ class DA_SML(DepthModel):
         super().__init__()
 
         self.min_pred = 0.1
-        self.max_pred = 25.0
+        self.max_pred = 20.0
         self.min_pred_inv = 1.0/self.min_pred
         self.max_pred_inv = 1.0/self.max_pred
         self.train_dino = kwargs['train_dino']
@@ -257,7 +271,7 @@ class DA_SML(DepthModel):
         prior_map = torch.cat([int_depth,int_scaffolding ], dim = 1)
         pred, scales = self.ScaleMapLearner(prior_map, int_depth)
 
-        # show_images_two_sources(rel_depth, pred)
+        # show_images_two_sources(image_no_norm,1.0/pred)
         output = dict(metric_depth=1.0/pred)
         output['inverse_depth'] = pred
         # show_images(1.0/pred)

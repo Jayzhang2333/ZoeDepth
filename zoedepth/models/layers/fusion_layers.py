@@ -864,7 +864,7 @@ class BasicBlock(nn.Module):
 
     def forward(self, x):
         residual = x
-
+        # breakpoint()
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
@@ -880,7 +880,7 @@ class BasicBlock(nn.Module):
 
         out += residual
         out = self.relu(out)
-
+        # breakpoint()
         return out
 
 

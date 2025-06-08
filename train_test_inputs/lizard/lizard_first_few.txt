@@ -1,0 +1,6 @@
+/media/jay/apple/uw_depth_lizard_data/images/0002.png /media/jay/apple/uw_depth_lizard_data/depth_tiff/0422.tiff /media/jay/apple/uw_depth_lizard_data/features-saved/0002.txt
+/media/jay/apple/uw_depth_lizard_data/images/0003.png /media/jay/apple/uw_depth_lizard_data/depth_tiff/0423.tiff /media/jay/apple/uw_depth_lizard_data/features-saved/0003.txt
+/media/jay/apple/uw_depth_lizard_data/images/0004.png /media/jay/apple/uw_depth_lizard_data/depth_tiff/0427.tiff /media/jay/apple/uw_depth_lizard_data/features-saved/0004.txt
+/media/jay/apple/uw_depth_lizard_data/images/0005.png /media/jay/apple/uw_depth_lizard_data/depth_tiff/0427.tiff /media/jay/apple/uw_depth_lizard_data/features-saved/0005.txt
+/media/jay/apple/uw_depth_lizard_data/images/0006.png /media/jay/apple/uw_depth_lizard_data/depth_tiff/0427.tiff /media/jay/apple/uw_depth_lizard_data/features-saved/0006.txt
+/media/jay/apple/uw_depth_lizard_data/images/0007.png /media/jay/apple/uw_depth_lizard_data/depth_tiff/0427.tiff /media/jay/apple/uw_depth_lizard_data/features-saved/0007.txt

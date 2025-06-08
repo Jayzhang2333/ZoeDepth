@@ -2,7 +2,7 @@ from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
 # Assuming the depth map is stored in a file called 'depth_map.tif'
-input_sparse_depth_fp = '/home/jay/Downloads/diode_dataset/train/outdoor/scene_00007/scan_00082/00007_00082_outdoor_000_020_rel_depth.png'
+input_sparse_depth_fp = '/home/jay/Downloads/first_100_cropped_resized/00002.png'
 depth_map_array = np.array(Image.open(input_sparse_depth_fp)) 
 print(np.shape(depth_map_array))
 print(np.max(depth_map_array))

@@ -1,0 +1,1 @@
+/media/jay/Marine/FLSea_test/FLSea_latest/archive/red_sea/sub_pier/sub_pier/imgs/16316027208748639.tiff /media/jay/Marine/FLSea_test/FLSea_latest/archive/red_sea/sub_pier/sub_pier/depth/16316027208748639_SeaErra_abs_depth.tif /media/jay/Marine/FLSea_test/FLSea_latest/archive/red_sea/sub_pier/sub_pier/imgs/matched_features/16316027208748639_features.csv

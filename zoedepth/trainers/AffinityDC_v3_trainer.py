@@ -27,7 +27,7 @@ import torch.cuda.amp as amp
 import torch.nn as nn
 
 from zoedepth.trainers.loss import GradL1Loss, SILogLoss, RMSELoss, L1SmoothLoss, NegativeLogLikelihoodLoss, InvNegativeLogLikelihoodLoss, \
-    InvRMSELoss, InvSILogLoss, MultiScaleInverseGradL1Loss,Sobel,SobelGradAndNormalLoss, VNL_Loss
+    InvRMSELoss, InvSILogLoss, MultiScaleInverseGradL1Loss,Sobel,SobelGradAndNormalLoss, VNL_Loss,MultiScaleGradientLoss,InvInfRMSELoss
 from zoedepth.utils.config import DATASETS_CONFIG
 from zoedepth.utils.misc import compute_metrics
 from zoedepth.data.preprocess import get_black_border
@@ -101,7 +101,7 @@ def show_images(tensor_images):
         axes = [axes]
     
     for idx in range(batch_size):
-        axes[idx].imshow(tensor_images[idx])  # Assuming images are normalized [0, 1]
+        axes[idx].imshow(tensor_images[idx], vmin = 0.1, vmax = 20.0)  # Assuming images are normalized [0, 1]
         axes[idx].axis('off')
     
     plt.show()
@@ -113,17 +113,11 @@ class Trainer(BaseTrainer):
                          test_loader=test_loader, device=device)
         self.device = device
         self.silog_loss = InvSILogLoss()
-        # self.grad_loss = GradL1Loss()
         self.rmse_loss = InvRMSELoss()
-        # self.grad_nrom_loss = SobelGradAndNormalLoss()
-        # self.vn_loss = VNL_Loss(320.0, 320.0, (480, 640))
-        # self.sobel = Sobel().cuda()
-        # self.NegLogLikelihood_loss = InvNegativeLogLikelihoodLoss()
-        # self.inv_gradient_loss = MultiScaleInverseGradL1Loss()
+        self.gradient_loss = MultiScaleGradientLoss()
+        self.inf_irmse_loss = InvInfRMSELoss()
         self.scaler = amp.GradScaler(enabled=self.config.use_amp)
         self.dataset = config.dataset
-        # if self.dataset == 'tartanair':
-        #     self.l1smooth_loss = L1SmoothLoss()
 
     def train_on_batch(self, batch, train_step):
         """
@@ -140,81 +134,47 @@ class Trainer(BaseTrainer):
 
         b, c, h, w = images.size()
         mask = batch["mask"].to(self.device).to(torch.bool)
+        inf_mask = batch["infinit_mask"].to(self.device).to(torch.bool)
         # show_images_three_sources(images, depths_gt, mask)
         # breakpoint()
         losses = {}
-    
-        # print(f"image shape is {images.shape}")
-        # print(f"gt shape is {depths_gt.shape}")
-        # print(f"sparse map shape is {sparse_features.shape}")
-        
+  
         with amp.autocast(enabled=self.config.use_amp):
 
-           
+            # show_images_three_sources(mask, inf_mask, depths_gt)
             output = self.model(images, prompt_depth = sparse_features)
 
             pred_depths = output['metric_depth']
             pred = nn.functional.interpolate(pred_depths, depths_gt.shape[-2:], mode='bilinear', align_corners=True)
             # pred_conf = output['confidence']
             pred_inverse_depths = output['inverse_depth']
-            # show_images_three_sources(images, pred_depths, sparse_features)
-            # breakpoint()
-
-            
-            # intermedian_pred_depths = output['intermedian_pred']
-            # print(pred_depths[0].shape)
+          
             l_si = self.silog_loss(
                 pred_inverse_depths, depths_gt, mask=mask, interpolate=True, return_interpolated=False)
-            
-            # l_si_intermedian = self.silog_loss(
-            #     intermedian_pred_depths, depths_gt, mask=mask, interpolate=True,)
-
-            # l_nll = self.NegLogLikelihood_loss(pred_inverse_depths, pred_conf, depths_gt, mask=mask, interpolate=True)
-            
+         
             l_rmse= self.rmse_loss(
                 pred_inverse_depths, depths_gt, mask=mask, interpolate=True)
             
-            # l_grad = self.grad_nrom_loss(
-            #     pred_depths, depths_gt, mask=mask, interpolate=True)
+            l_inf_rmse= self.inf_irmse_loss(
+                pred_inverse_depths, depths_gt, inf_mask=inf_mask, interpolate=True)
             
-
-            # l_vn = self.vn_loss(
-            #     pred_depths, depths_gt, mask=mask, interpolate=True)
-            # print(l_vn)
+            l_grad= self.gradient_loss(
+                pred_inverse_depths, depths_gt, mask=mask, interpolate=True)
+            
+            # print(l_si)
+            # print(l_rmse)
+            # print(l_grad)
+            # print(l_inf_rmse)
             # breakpoint()
             
-            # l_inv_gradient = self.inv_gradient_loss(pred_inverse_depths, depths_gt, mask=mask, interpolate=True)
-            
-            # if self.dataset == 'tartanair':
-            #     l_l1smooth = self.l1smooth_loss(
-            #     pred_depths, depths_gt, mask=mask, interpolate=True)
-            
-            # l_rmse_intermedian= self.rmse_loss(
-            #     intermedian_pred_depths, depths_gt, mask=mask, interpolate=True)
-
-            if self.dataset == 'tartanair':
-                loss =  self.config.w_si*l_si + self.config.w_rmse*l_rmse #+ self.config.w_vn*l_vn#+ self.config.w_gradient*l_grad # + self.config.w_nrom*l_nrom 
-            else:
-                loss =  self.config.w_si*l_si + self.config.w_rmse * l_rmse# + self.config.w_vn*l_vn #+ self.config.w_gradient*l_grad # + self.config.w_nrom*l_nrom 
+            loss =  self.config.w_si*l_si + self.config.w_rmse*l_rmse \
+                  + self.config.w_inf_rmse*l_inf_rmse + self.config.w_gradient*l_grad 
+           
             losses[self.silog_loss.name] = l_si
             losses[self.rmse_loss.name] = l_rmse
-            # losses['l_gradient_metric'] = l_grad
-            # losses['l_vn'] = l_vn
-            # losses['l_normal_metric'] = l_nrom
-            # losses[self.inv_gradient_loss.name] = l_inv_gradient
-            # losses['l_nll'] = l_nll
-
-            # if self.dataset == 'tartanair':
-            #     losses['l_l1smooth'] = l_l1smooth
-            # losses['l_silog_intermedian'] = l_si_intermedian
-            # losses['l_rmse_intermedian'] = l_rmse_intermedian
-
-            # if self.config.w_grad > 0:
-            #     l_grad = self.grad_loss(pred, depths_gt, mask=mask)
-            #     loss = loss + self.config.w_grad * l_grad
-            #     losses[self.grad_loss.name] = l_grad
-            # else:
-            #     l_grad = torch.Tensor([0])
+            losses['l_gradient'] = l_grad
+            losses['l_inf_rmse'] = l_inf_rmse
+        
 
         self.scaler.scale(loss).backward()
 
@@ -230,9 +190,7 @@ class Trainer(BaseTrainer):
         if self.should_log and (self.step % int(self.config.log_images_every * self.iters_per_epoch)) == 0:
             # -99 is treated as invalid depth in the log_images function and is colored grey.
             depths_gt[torch.logical_not(mask)] = -99
-            # print(images[0, ...].shape)
-            # print(depths_gt[0].shape[-2:])
-            # print(pred_depths[0].shape)
+           
             input_resized = nn.functional.interpolate(images[0, ...].unsqueeze(0), size=depths_gt[0].shape[-2:], mode='bilinear', align_corners=False)
             pred_resized = nn.functional.interpolate(pred[0].unsqueeze(0), size=depths_gt[0].shape[-2:], mode='bilinear', align_corners=False)
             
@@ -240,7 +198,7 @@ class Trainer(BaseTrainer):
                             min_depth=DATASETS_CONFIG[dataset]['min_depth'], max_depth=DATASETS_CONFIG[dataset]['max_depth'])
             # self.log_images(rgb={"Input": images[0, ...]}, depth={"GT": depths_gt[0], "PredictedMono": pred[0]}, prefix="Train",
             #                 min_depth=DATASETS_CONFIG[dataset]['min_depth'], max_depth=DATASETS_CONFIG[dataset]['max_depth'])
-
+            # show_images(depths_gt[0].unsqueeze(0))
 
             if self.config.get("log_rel", False):
                 self.log_images(
@@ -304,6 +262,7 @@ class Trainer(BaseTrainer):
         depths_gt = batch['depth'].to(self.device)
         dataset = batch['dataset'][0]
         mask = batch["mask"].to(self.device)
+        inf_mask = batch["infinit_mask"].to(self.device)
         
         if 'has_valid_depth' in batch:
             if not batch['has_valid_depth']:
@@ -324,6 +283,18 @@ class Trainer(BaseTrainer):
             l_rmse = self.rmse_loss(
                 pred_depths_inverse, depths_gt, mask=mask.to(torch.bool), interpolate=True)
             
+            l_grad= self.gradient_loss(
+                pred_depths_inverse, depths_gt, mask=mask, interpolate=True)
+            
+            l_inf_rmse= self.inf_irmse_loss(
+                pred_depths_inverse, depths_gt, inf_mask=inf_mask, interpolate=True)
+            
+            # print(l_depth)
+            # print(l_rmse)
+            # print(l_grad)
+            # print(l_inf_rmse)
+            # breakpoint()
+            
             # l_grad = self.grad_nrom_loss(
             #     pred_depths, depths_gt, mask=mask, interpolate=True)
             # l_vn = self.vn_loss(
@@ -333,7 +304,8 @@ class Trainer(BaseTrainer):
         metrics = compute_metrics(depths_gt, pred_depths,sparse_mask=valid_points_mask, **self.config)
         losses = {f"{self.silog_loss.name}": l_depth.item()}
         losses[self.rmse_loss.name] = l_rmse
-        # losses['l_gradient_metric'] = l_grad
+        losses['l_gradient'] = l_grad
+        losses['l_inf_rmse'] = l_inf_rmse
         # losses['l_vn'] = l_vn
         # losses['l_normal_metric'] = l_nrom
 

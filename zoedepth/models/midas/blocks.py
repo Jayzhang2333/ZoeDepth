@@ -118,9 +118,16 @@ def _make_pretrained_efficientnet_lite3_original(use_pretrained, exportable=Fals
     efficientnet = torch.hub.load(
         "rwightman/gen-efficientnet-pytorch",
         "tf_efficientnet_lite3",
-        pretrained=use_pretrained,
+        pretrained=False,
         exportable=exportable
     )
+    if use_pretrained:
+        
+        state_dict = torch.load('./weights/tf_efficientnet_lite3-b733e338.pth', map_location="cpu")
+        # if your checkpoint is a dict with a 'state_dict' key, do:
+        # state_dict = state_dict["state_dict"]
+        efficientnet.load_state_dict(state_dict)
+
     return _make_efficientnet_backbone(efficientnet)
 
 def _make_pretrained_efficientnet_lite3(use_pretrained, exportable=False):

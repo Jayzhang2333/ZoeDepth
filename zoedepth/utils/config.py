@@ -224,9 +224,13 @@ DATASETS_CONFIG = {
 
         "data_path_eval": "/",
         "gt_path_eval": "/",
-        "filenames_file_eval": "./train_test_inputs/flease_testing/flsea_preserved_testing_marine.txt",
-        # "filenames_file_eval": "/media/jay/Marine/archive/red_sea/sub_filtered_dataset_index_updated_path.txt",
-        # "filenames_file_eval": "./train_test_inputs/flease_testing/flsea_red_sea_test_with_matched_features.txt",
+        "filenames_file_eval": "./train_test_inputs/flease_testing/flsea_preserved_testing_marine.txt", #full point set 400 point on average
+        #"filenames_file_eval": "./train_test_inputs/flease_testing/flsea_red_sea_preserved_testing_marine.txt", #full point set only red sea images
+        #"filenames_file_eval": "./train_test_inputs/flease_testing/flsea_preserved_testing_subsampled_10.txt", #subsampled points 10,50,100,200
+        # "filenames_file_eval": "./train_test_inputs/flease_testing/dvl_simulate_flsea.txt", #4 points DVL simulation
+        # "filenames_file_eval": "./train_test_inputs/flease_testing/random_square_flsea.txt", # random big suqare simulation
+        # "filenames_file_eval": "./train_test_inputs/flease_testing/simulate_sonar_flsea.txt", # sonar simulation a single line with variation
+        # "filenames_file_eval": "./train_test_inputs/flease_testing/simulate_sonar_flsea_straight_line.txt", # sonar simulation a single line
         "min_depth_eval": 0.1,
         "max_depth_eval": 10.0,
         "sparse_feature_height": 240,
@@ -336,7 +340,7 @@ DATASETS_CONFIG = {
 
         "data_path_eval": "/",
         "gt_path_eval": "/",
-        "filenames_file_eval": "/media/jay/Lexar/SeaThru/sea_thru/sub_sampled_image_depth_sparse_paths_downsampled.txt.txt",
+        "filenames_file_eval": "/media/jay/Marine/SeaThru/sea_thru/sub_sampled_image_depth_sparse_paths_downsampled.txt.txt",
         # "filenames_file_eval": "./train_test_inputs/flsea_red_sea/pier_path_test_with_matched_features.txt",
         # "filenames_file_eval": "./train_test_inputs/flease_testing/flsea_red_sea_test_with_matched_features.txt",
         "min_depth_eval": 0.1,
@@ -364,7 +368,7 @@ DATASETS_CONFIG = {
 
         "data_path_eval": "/",
         "gt_path_eval": "/",
-        "filenames_file_eval": "./train_test_inputs/lizard/lizard_image_depth_paths.txt",
+        "filenames_file_eval": "./train_test_inputs/lizard/lizard_image_depth_paths_subsampled_depth.txt",
         "min_depth_eval": 0.1,
         "max_depth_eval": 5.0,
         "sparse_feature_height": 1002,
@@ -538,8 +542,8 @@ COMMON_TRAINING_CONFIG = {
     "translate_prob": 0.2,
     "max_translation": 100,
 
-    "validate_every": 0.5,
-    "log_images_every": 0.1,
+    "validate_every": 1.0,
+    "log_images_every": 0.5,
     "prefetch": False,
 }
 

@@ -974,12 +974,14 @@ class DPTHeadCustomised3(nn.Module):
 
         layer_1, layer_2, layer_3, layer_4 = out
        
-        # featrues = [layer_1, layer_2, layer_3, layer_4]
         
         layer_1_rn = self.scratch.layer1_rn(layer_1)
         layer_2_rn = self.scratch.layer2_rn(layer_2)
         layer_3_rn = self.scratch.layer3_rn(layer_3)
         layer_4_rn = self.scratch.layer4_rn(layer_4)
+
+        featrues = [layer_1_rn, layer_2_rn, layer_3_rn, layer_4_rn]
+        
         
         path_4 = self.scratch.refinenet4(layer_4_rn, size=layer_3_rn.shape[2:])
         path_3 = self.scratch.refinenet3(path_4, layer_3_rn, size=layer_2_rn.shape[2:])
@@ -993,6 +995,6 @@ class DPTHeadCustomised3(nn.Module):
 
         rel_depth = self.scratch.output_conv2(out_feat)
 
-        featrues = [path_1, path_2, path_3, path_4]
+        # featrues = [path_1, path_2, path_3, path_4]
         
         return rel_depth, featrues

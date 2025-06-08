@@ -6,6 +6,63 @@ import torch.nn.functional as F
 import einops
 from timm.models.layers import to_2tuple, trunc_normal_
 
+import matplotlib.pyplot as plt
+def plot_normalized_coords(coords_tensor, batch_idx=0, save_path=None):
+    """
+    Plot interior points from a [B, H, W, 2] tensor where each (y,x) ∈ [-1,1].
+    If B > 1, uses `batch_idx` to select which sample to plot.
+    If B == 1, ignores `batch_idx` and always plots the sole sample.
+    Points on the border (x or y == -1 or 1) are filtered out.
+    Optionally save the selected [H, W, 2] tensor as a .npy file.
+
+    Args:
+        coords_tensor (torch.Tensor): shape [B, H, W, 2], normalized coords.
+        batch_idx (int): index in [0, B-1] to plot when B > 1 (default 0).
+        save_path (str or None): if provided, save the selected sample as a .npy to this path.
+    """
+    # validate shape
+    if coords_tensor.ndim != 4 or coords_tensor.shape[3] != 2:
+        raise ValueError(f"Expected shape [B,H,W,2], got {tuple(coords_tensor.shape)}")
+    B, H, W, _ = coords_tensor.shape
+
+    # select the correct batch
+    if B > 1:
+        if not (0 <= batch_idx < B):
+            raise IndexError(f"batch_idx must be in [0, {B-1}], got {batch_idx}")
+        sample = coords_tensor[batch_idx]  # [H, W, 2]
+    else:
+        sample = coords_tensor[0]
+
+    # convert to numpy
+    sample_np = sample.detach().cpu().numpy()  # shape (H, W, 2)
+
+    # optionally save
+    if save_path is not None:
+        np.save(save_path, sample_np)
+
+    # flatten and filter
+    pts = sample_np.reshape(-1, 2)  # (H*W, 2)
+    ys, xs = pts[:, 0], pts[:, 1]
+    mask = (xs > -1) & (xs < 1) & (ys > -1) & (ys < 1)
+    xs, ys = xs[mask], ys[mask]
+
+    # plot
+    fig, ax = plt.subplots(figsize=(6, 6))
+    ax.scatter(xs, ys, s=20, c='red')
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.invert_yaxis()
+    ax.set_xlabel('x (normalized)')
+    ax.set_ylabel('y (normalized)')
+    title = "Interior Points in [-1,1]²"
+    if B > 1:
+        title += f" (batch {batch_idx})"
+    ax.set_title(title)
+    ax.axhline(0, color='gray', lw=0.5)
+    ax.axvline(0, color='gray', lw=0.5)
+    plt.tight_layout()
+    plt.show()
+    
 class LocalAttention(nn.Module):
 
     def __init__(self, dim, heads, window_size, attn_drop, proj_drop):
@@ -236,23 +293,27 @@ class DAttentionBaseline(nn.Module):
         return ref
 
     def forward(self, x):
-
+        
         B, C, H, W = x.size()
         dtype, device = x.dtype, x.device
-
+        
         q = self.proj_q(x)
+       
         q_off = einops.rearrange(q, 'b (g c) h w -> (b g) c h w', g=self.n_groups, c=self.n_group_channels)
+        
         offset = self.conv_offset(q_off).contiguous()  # B * g 2 Hg Wg
+        
         Hk, Wk = offset.size(2), offset.size(3)
+        
         n_sample = Hk * Wk
 
         if self.offset_range_factor >= 0 and not self.no_off:
             offset_range = torch.tensor([1.0 / (Hk - 1.0), 1.0 / (Wk - 1.0)], device=device).reshape(1, 2, 1, 1)
             offset = offset.tanh().mul(offset_range).mul(self.offset_range_factor)
-
+        
         offset = einops.rearrange(offset, 'b p h w -> b h w p')
         reference = self._get_ref_points(Hk, Wk, B, dtype, device)
-
+        # breakpoint()
         if self.no_off:
             offset = offset.fill_(0.0)
 
@@ -260,7 +321,11 @@ class DAttentionBaseline(nn.Module):
             pos = offset + reference
         else:
             pos = (offset + reference).clamp(-1., +1.)
+        
 
+        # breakpoint()
+        # plot_normalized_coords(pos)
+        
         if self.no_off:
             x_sampled = F.avg_pool2d(x, kernel_size=self.stride, stride=self.stride)
             assert x_sampled.size(2) == Hk and x_sampled.size(3) == Wk, f"Size is {x_sampled.size()}"
@@ -270,9 +335,9 @@ class DAttentionBaseline(nn.Module):
                 grid=pos[..., (1, 0)], # y, x -> x, y
                 mode='bilinear', align_corners=True) # B * g, Cg, Hg, Wg
                 
-
+        # breakpoint()
         x_sampled = x_sampled.reshape(B, C, 1, n_sample)
-
+        # breakpoint()
         q = q.reshape(B * self.n_heads, self.n_head_channels, H * W)
         k = self.proj_k(x_sampled).reshape(B * self.n_heads, self.n_head_channels, n_sample)
         v = self.proj_v(x_sampled).reshape(B * self.n_heads, self.n_head_channels, n_sample)

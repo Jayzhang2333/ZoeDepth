@@ -44,6 +44,7 @@ from zoedepth.utils.misc import (RunningAverageDict, colors, compute_metrics,eva
 import tifffile
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.gridspec as gridspec
+from scipy.spatial import QhullError
 
 def show_images_four_sources(source1, source2, source3, source4):
     """
@@ -305,7 +306,8 @@ def evaluate(model, test_loader, config, round_vals=True, round_precision=3, mul
         # Count the number of valid points within the range
         valid_points_count = valid_points_mask.sum().item()  # Convert to a Python int
     
-        if valid_points_count<=4:
+        if valid_points_count<4:
+            print("valid_points_count < 4")
             continue
 
         gt_valid_points_mask = (depth >= config.min_depth) & (depth <= config.max_depth)
@@ -323,7 +325,24 @@ def evaluate(model, test_loader, config, round_vals=True, round_precision=3, mul
         focal = sample.get('focal', torch.Tensor(
             [715.0873]).cuda())  # This magic number (focal length) is only used for evaluating BTS model
         # print('infer')
-        pred = infer(model, image, sparse_features, config, image_no_norm,dataset=sample['dataset'][0], focal=focal)
+        # pred = infer(model, image, sparse_features, config, image_no_norm,dataset=sample['dataset'][0], focal=focal)
+
+        try:
+            pred = infer(
+                model,
+                image,
+                sparse_features,
+                config,
+                image_no_norm,
+                dataset=sample['dataset'][0],
+                focal=focal
+            )
+        except QhullError as e:
+            # Skip this sample entirely if the griddata interpolation fails
+            print(f"Skipped {sample['dataset'][0]} due to QhullError: {e}")
+            continue
+
+
         # depth_filtered = torch.where(depth >10.0, 10.0, depth)
         # depth_filtered = torch.where(depth_filtered <0.1, depth_filtered.max()+2, depth_filtered)
         
@@ -339,6 +358,7 @@ def evaluate(model, test_loader, config, round_vals=True, round_precision=3, mul
         # error_map = torch.where(depth_filtered == depth_filtered.max(), 0, error_map)
         # show_images_four_sources(upsampled_image,upsampled_pred, depth_filtered, error_map)
         # show_images_three_sources(upsampled_image,upsampled_pred, depth_filtered, name1 = 'Image', name2 = 'Prediction', name3 = 'Stereo Depth', figure_name = i)
+        
         if multi_range_evaluation is not None:
             result = evaluation_on_ranges(depth, pred, evaluation_range=multi_range_evaluation)
         else:

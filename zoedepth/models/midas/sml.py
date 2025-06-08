@@ -261,6 +261,9 @@ class SMLDeformableAttention(BaseModel):
         # self.encoder, self.scratch = _make_encoder_conv_cbam_input_fusion( features, groups=self.groups, expand=self.expand)
         self.encoder, self.scratch = _make_encoder_DAT(features, groups=self.groups, expand=self.expand)
 
+        # self.ga_skip_connection = nn.Conv2d(1, features1, kernel_size=3, stride=1, padding=1, bias=False, groups=self.groups)
+        # self.skip_add = nn.quantized.FloatFunctional()
+
         self.multi_feature_fusion = ProgressiveFusionMulti(4, features, 32, (336,448))
 
         self.scratch.activation = nn.ReLU(False)    
@@ -276,7 +279,7 @@ class SMLDeformableAttention(BaseModel):
         
 
 
-    def forward(self, ga, scale, d, features):
+    def forward(self, ga, input_scale, d, features):
         """Forward pass.
 
         Args:
@@ -288,10 +291,11 @@ class SMLDeformableAttention(BaseModel):
         """
         fused_feature = self.multi_feature_fusion(features)
         # display_feature_heatmap(fused_feature)
+        # ga_skip_feature = self.ga_skip_connection(ga)
         
 
 
-        layer_1, layer_2, layer_3, layer_4 = self.encoder(ga, scale, fused_feature)
+        layer_1, layer_2, layer_3, layer_4 = self.encoder(ga, input_scale, fused_feature)
 
         # display_feature_and_secondary_heatmap(layer_4, F.interpolate(scale, layer_4.shape[2:], mode="bilinear", align_corners=True))
         # display_feature_and_secondary_heatmap(layer_3, F.interpolate(scale, layer_3.shape[2:], mode="bilinear", align_corners=True))
@@ -315,13 +319,17 @@ class SMLDeformableAttention(BaseModel):
         path_2 = self.scratch.refinenet2(path_3, layer_2_rn, size=layer_1_rn.shape[2:])
         path_1 = self.scratch.refinenet1(path_2, layer_1_rn)
         
+        
+
         out_feature = self.scratch.output_conv1(path_1)
         out_feature = F.interpolate(out_feature, (336,448), mode="bilinear", align_corners=True)
+        # breakpoint()
+        # out_feature = self.skip_add.add(out_feature, ga_skip_feature)
         out = self.scratch.output_conv(out_feature)
         # conf = self.scratch.output_conv_conf(out_feature)
-
-        scales = F.relu(1.0 + out)
-        pred = d * scales
+        # show_images(input_scale)
+        pred_scales = F.relu(1.0 + out)
+        pred = d * pred_scales
 
         # clamp pred to min and max
         if self.min_pred is not None:
@@ -332,4 +340,4 @@ class SMLDeformableAttention(BaseModel):
             pred[pred < max_pred_inv] = max_pred_inv
 
         # also return scales
-        return (pred, scales)
+        return (pred, pred_scales)

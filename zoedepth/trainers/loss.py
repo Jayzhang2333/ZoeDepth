@@ -473,53 +473,239 @@ class InvRMSELoss(nn.Module):
                 mask = mask.unsqueeze(1)
 
             input = input[mask]
+            input = input*100
             target = target[mask]
-            target = 1.0/target
+            target = 1.0/(target+ 1e-6)
+            target = target*100
 
         with amp.autocast(enabled=False):
-            loss = 50 * torch.sqrt(self.mse_loss(input, target))
+            loss = torch.sqrt(self.mse_loss(input, target))
 
         return loss
     
-class MultiScaleGradientLoss(nn.Module):
-    """Multi-scale Gradient Loss"""
+class InvInfRMSELoss(nn.Module):
+    """Inverse Infinite-region RMSE Loss"""
 
-    def __init__(self, num_scales=3):
-        super(MultiScaleGradientLoss, self).__init__()
-        self.name = "MultiScaleGradientLoss"
-        self.num_scales = num_scales
+    def __init__(self) -> None:
+        super(InvInfRMSELoss, self).__init__()
+        self.name = "InvInfRMSELoss"
+        self.mse_loss = nn.MSELoss()
 
-    def compute_gradients(self, x):
-        grad_x = torch.abs(x[:, :, :, :-1] - x[:, :, :, 1:])
-        grad_y = torch.abs(x[:, :, :-1, :] - x[:, :, 1:, :])
-        return grad_x, grad_y
+    def forward(self, input, target, max_depth=20, inf_mask=None, interpolate=True):
+        # Extract the output tensor
+        input = extract_key(input, KEY_OUTPUT)
 
-    def forward(self, input, target, mask=None, interpolate=True):
-
+        # Upsample if dimensions differ
         if input.shape[-1] != target.shape[-1] and interpolate:
             input = nn.functional.interpolate(
                 input, target.shape[-2:], mode='bilinear', align_corners=True)
 
-        if target.ndim == 3:
-            target = target.unsqueeze(1)
+        # If no mask provided or no infinite pixels, return zero loss
+        if inf_mask is None:
+            return torch.tensor(0.0, device=input.device, dtype=input.dtype)
 
-        loss = 0.0
-        pred, gt = input, target
+        # Ensure mask has channel dimension
+        if inf_mask.ndim == 3:
+            inf_mask = inf_mask.unsqueeze(1)
 
-        for k in range(self.num_scales):
-            grad_pred_x, grad_pred_y = self.compute_gradients(pred)
-            grad_gt_x, grad_gt_y = self.compute_gradients(gt)
+        # If mask contains no True values, return zero loss
+        if not inf_mask.any():
+            return torch.tensor(0.0, device=input.device, dtype=input.dtype)
 
-            loss += torch.mean(torch.abs(grad_pred_x - grad_gt_x))
-            loss += torch.mean(torch.abs(grad_pred_y - grad_gt_y))
+        # Select infinite-region pixels and scale
+        # show_images_two_sources(input,inf_mask)
+        vals = input[inf_mask]
+        vals = vals * 100.0
+        inf_tensor = torch.full_like(vals, 100.0 / max_depth)
 
-            if k < self.num_scales - 1:
-                pred = F.avg_pool2d(pred, kernel_size=2, stride=2)
-                gt = F.avg_pool2d(gt, kernel_size=2, stride=2)
-
-        loss /= self.num_scales
+        # Compute RMSE without AMP autocast
+        with amp.autocast(enabled=False):
+            loss = torch.sqrt(self.mse_loss(vals, inf_tensor))
 
         return loss
+    
+class MultiScaleGradientLoss(nn.Module):
+    """
+    Multi-scale gradient loss on metric depths:
+
+        L = (1/K) * sum_{k=0..K-1} [ 
+                mean(|∂_x d_pred^k - ∂_x d_gt^k|) 
+              + mean(|∂_y d_pred^k - ∂_y d_gt^k|) 
+            ]
+
+    where d_pred^k, d_gt^k, and mask^k are downsampled by 2×2 avg-pool at each scale.
+    Loss is only computed where mask^k==True for both pixels involved in each gradient.
+    """
+
+    def __init__(self, num_scales: int = 3, eps: float = 1e-6):
+        super().__init__()
+        self.num_scales = num_scales
+        self.eps        = eps
+
+    def forward(self,
+                inv_pred: torch.Tensor,
+                gt:   torch.Tensor,
+                mask: torch.Tensor = None,
+                interpolate: bool = True) -> torch.Tensor:
+        """
+        Parameters
+        ----------
+        pred, gt : (B,1,H,W) or (B,H,W)
+            metric depth maps (in metres).
+        mask : (B,H,W) or (B,1,H,W), optional
+            boolean mask of valid GT pixels.
+        interpolate : whether to upsample pred to gt resolution.
+        """
+
+        # 1) Optionally resize pred → gt
+        if inv_pred.shape[-1] != gt.shape[-1] and interpolate:
+            inv_pred = nn.functional.interpolate(
+                inv_pred, gt.shape[-2:], mode='bilinear', align_corners=True)
+            
+        if inv_pred.dim() == 3:
+            inv_pred = inv_pred.unsqueeze(1)
+        if gt.dim() == 3:
+            gt   = gt.unsqueeze(1)
+
+        # 2) inverse
+        # inv_pred = 1.0 / (pred + self.eps)
+        inv_pred = inv_pred*100
+        inv_gt   = 1.0 / (gt   + self.eps) * 100
+
+        # 3) Prepare mask at full resolution
+        if mask is not None:
+            if mask.dim()==3: mask = mask.unsqueeze(1)
+            mask_down = mask.bool()
+        else:
+            mask_down = None
+
+        total_loss = 0.0
+        depth_pred = inv_pred
+        depth_gt   = inv_gt
+
+
+        for k in range(self.num_scales):
+            # compute gradients along x and y
+            dx_pred = depth_pred[:, :, :, :-1] - depth_pred[:, :, :, 1:]
+            dx_gt   = depth_gt  [:, :, :, :-1] - depth_gt  [:, :, :, 1:]
+            d_dx    = dx_pred - dx_gt
+
+            dy_pred = depth_pred[:, :, :-1, :] - depth_pred[:, :, 1:, :]
+            dy_gt   = depth_gt  [:, :, :-1, :] - depth_gt  [:, :, 1:, :]
+            d_dy    = dy_pred - dy_gt
+
+            if mask_down is not None:
+                # only keep gradients where both pixels are valid
+                mx = mask_down[:, :, :, :-1] & mask_down[:, :, :, 1:]
+                my = mask_down[:, :, :-1, :] & mask_down[:, :, 1:, :]
+
+                loss_x = (d_dx.abs() * mx).sum() / (mx.sum() + self.eps)
+                loss_y = (d_dy.abs() * my).sum() / (my.sum() + self.eps)
+            else:
+                loss_x = d_dx.abs().mean()
+                loss_y = d_dy.abs().mean()
+
+            total_loss += (loss_x + loss_y)
+
+            # downsample for next scale
+            if k < self.num_scales - 1:
+                # show_images_two_sources(depth_pred, mask_down)
+                depth_pred = F.avg_pool2d(depth_pred, kernel_size=2, stride=2)
+                depth_gt   = F.avg_pool2d(depth_gt,   kernel_size=2, stride=2)
+                if mask_down is not None:
+                    # any pixel in the 2×2 patch is valid → keep it
+                    mask_down = (F.avg_pool2d(mask_down.float(),
+                                              kernel_size=2,
+                                              stride=2) > 0)
+
+        return total_loss / self.num_scales
+
+# class MultiScaleGradientLoss(nn.Module):
+#     """
+#     Multi-scale gradient loss on inverse-depth residuals:
+#         R = 1/(gt + eps) - 1/(pred + eps)
+#     L = (1/K) * sum_{k=0..K-1} [ mean(|∂_x R^k|) + mean(|∂_y R^k|) ]
+#     where R^k and mask are downsampled by 2×2 avg-pool at each scale.
+#     """
+
+#     def __init__(self, num_scales: int = 3, eps: float = 1e-6):
+#         super().__init__()
+#         self.num_scales = num_scales
+#         self.eps        = eps
+
+#     def forward(self,
+#                 inv_pred: torch.Tensor,
+#                 gt:   torch.Tensor,
+#                 mask: torch.Tensor = None,
+#                 interpolate=True) -> torch.Tensor:
+#         """
+#         Parameters
+#         ----------
+#         pred, gt : (B,1,H,W) or (B,H,W)
+#             metric depth maps
+#         mask : (B,H,W) or (B,1,H,W), optional
+#             boolean mask of valid GT pixels
+#         """
+#         if inv_pred.shape[-1] != gt.shape[-1] and interpolate:
+#             inv_pred = nn.functional.interpolate(
+#                 inv_pred, gt.shape[-2:], mode='bilinear', align_corners=True)
+
+#         # 1) ensure channel dim
+#         if inv_pred.dim() == 3:
+#             inv_pred = inv_pred.unsqueeze(1)
+#         if gt.dim() == 3:
+#             gt   = gt.unsqueeze(1)
+
+#         # 2) inverse
+#         # inv_pred = 1.0 / (pred + self.eps)
+#         inv_pred = inv_pred*100
+#         inv_gt   = 1.0 / (gt   + self.eps) * 100
+
+#         # 3) prepare mask_down to track at each scale
+#         if mask is not None:
+#             if mask.dim() == 3:
+#                 mask = mask.unsqueeze(1)
+#             mask_down = mask.bool()
+#         else:
+#             mask_down = None
+
+#         # 4) residual at full res
+#         R = inv_gt - inv_pred
+#         total_loss = 0.0
+
+#         for k in range(self.num_scales):
+#             B, C, H, W = R.shape
+#             # breakpoint()
+#             # gradients of R^k
+#             grad_x = R[:, :, :, :-1] - R[:, :, :, 1:]
+#             grad_y = R[:, :, :-1, :] - R[:, :, 1:, :]
+
+#             if mask_down is not None:
+#                 # use the **current** mask_down for this scale
+#                 mask_k = mask_down
+
+#                 # only keep grads where both pixels valid
+#                 mask_x = mask_k[:, :, :, :-1] & mask_k[:, :, :, 1:]
+#                 mask_y = mask_k[:, :, :-1, :] & mask_k[:, :, 1:, :]
+
+#                 loss_x = (grad_x.abs() * mask_x).sum() / (mask_x.sum() + self.eps)
+#                 loss_y = (grad_y.abs() * mask_y).sum() / (mask_y.sum() + self.eps)
+#             else:
+#                 loss_x = grad_x.abs().mean()
+#                 loss_y = grad_y.abs().mean()
+
+#             total_loss += (loss_x + loss_y)
+#             show_images_two_sources(R, mask_down)
+#             # downsample R—and mask_down—by 2×2 avg-pool for the next scale
+#             if k < self.num_scales - 1:
+#                 R = F.avg_pool2d(R, kernel_size=2, stride=2)
+#                 if mask_down is not None:
+#                     # avg_pool2d(mask_down.float()) > 0  matches exactly R’s receptive field
+#                     mask_down = (F.avg_pool2d(mask_down.float(),
+#                                               kernel_size=2,
+#                                               stride=2) > 0)
+
+#         return  (total_loss / self.num_scales)
 
 
 
@@ -580,7 +766,7 @@ class SILogLoss(nn.Module):
     
 class InvSILogLoss(nn.Module):
     """SILog loss (pixel-wise)"""
-    def __init__(self, beta=0.15):
+    def __init__(self, beta=0.85):
         super(InvSILogLoss, self).__init__()
         self.name = 'iSILog'
         self.beta = beta
@@ -602,8 +788,10 @@ class InvSILogLoss(nn.Module):
                 mask = mask.unsqueeze(1)
 
             input = input[mask]
+            input = input*100
             target = target[mask]
             target = 1.0 / target
+            target = target*100
 
         with amp.autocast(enabled=False):  # amp causes NaNs in this loss function
             alpha = 1e-7

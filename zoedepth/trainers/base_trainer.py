@@ -273,7 +273,7 @@ class BaseTrainer:
                         f"Epoch: {epoch + 1}/{self.config.epochs}. Loop: Train. Losses: {stringify_losses(losses)}")
                 self.scheduler.step()
 
-                if self.should_log and self.step % 500 == 0:
+                if self.should_log and self.step % 1000 == 0:
                     wandb.log({f"Train/{name}": loss.item() for name, loss in losses.items()}, step=self.step)
 
                 self.step += 1
@@ -346,7 +346,7 @@ class BaseTrainer:
                     losses_avg.update(losses)
                 if metrics:
                     metrics_avg.update(metrics)
-
+            # breakpoint()
             return metrics_avg.get_value(), losses_avg.get_value()
 
     def save_checkpoint(self, filename):

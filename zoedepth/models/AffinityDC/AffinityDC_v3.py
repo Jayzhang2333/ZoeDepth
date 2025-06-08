@@ -144,12 +144,163 @@ import matplotlib.gridspec as gridspec
 #     plt.colorbar(im, cax=cax1)
 
 #     plt.show()
-def display_images(source1, source2, source3, source4):
+
+def plot_sparse_depth_tensor(sparse_tensor, batch_idx=0, save_path=None):
+    """
+    Plot non-zero points from a [B, 1, H, W] sparse depth tensor in normalized [-1,1] coords.
+    Top-left = (-1,-1), bottom-right = (1,1). Colors indicate depth values.
+    Optionally save the (x, y, depth) points to a .npy file.
+
+    Args:
+        sparse_tensor (torch.Tensor): shape [B,1,H,W], invalid entries are zero.
+        batch_idx (int): index of batch to plot if B > 1 (default 0).
+        save_path (str, optional): path to save the points as a .npy file.
+    """
+    # Validate input shape
+    if sparse_tensor.ndim != 4 or sparse_tensor.shape[1] != 1:
+        raise ValueError(f"Expected tensor shape [B,1,H,W], got {tuple(sparse_tensor.shape)}")
+    B, _, H, W = sparse_tensor.shape
+
+    # Select batch slice
+    if B > 1:
+        if not (0 <= batch_idx < B):
+            raise IndexError(f"batch_idx must be in [0, {B-1}], got {batch_idx}")
+        sample = sparse_tensor[batch_idx, 0]
+    else:
+        sample = sparse_tensor[0, 0]
+
+    # Move to CPU
+    sample_cpu = sample.detach().cpu()
+
+    # Find non-zero entries
+    rows, cols = torch.nonzero(sample_cpu, as_tuple=True)
+    if rows.numel() == 0:
+        print("No non-zero points to plot.")
+        return
+
+    # Normalize coordinates to [-1,1]
+    xs = (cols.float() / (W - 1)) * 2 - 1
+    ys = (rows.float() / (H - 1)) * 2 - 1
+    vals = sample_cpu[rows, cols]
+
+    # Convert to numpy for plotting
+    xs_np = xs.numpy()
+    ys_np = ys.numpy()
+    vals_np = vals.numpy()
+
+    # Optionally save to .npy
+    if save_path is not None:
+        points = np.stack([xs_np, ys_np, vals_np], axis=1)  # shape (N, 3)
+        np.save(save_path, points)
+        print(f"Saved {points.shape[0]} points to {save_path}")
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(6,6))
+    sc = ax.scatter(xs_np, ys_np, c=vals_np, cmap='viridis', s=25)
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.invert_yaxis()
+    ax.set_xlabel('x (normalized)')
+    ax.set_ylabel('y (normalized)')
+    ax.set_title(f'Sparse Depth Map (batch {batch_idx})')
+    ax.axhline(0, color='gray', linewidth=0.5)
+    ax.axvline(0, color='gray', linewidth=0.5)
+    plt.colorbar(sc, ax=ax, label='depth value')
+    plt.tight_layout()
+    plt.show()
+
+def display_and_save_images(
+    source1, source2, source3, source4,
+    save_path: str,
+    title_fontsize=16,
+    title_fontweight='bold',
+    dpi=300
+):
+    """
+    Displays and saves a 1×2 layout:
+      - Left: Overlay image (RGB + sparse points colored by metric depth)
+      - Right: Metric depth map
+
+    White background is made transparent in the saved PNG.
+
+    Args:
+        source1, source2, source3, source4: same as before
+        save_path: where to write the transparent PNG
+        title_fontsize, title_fontweight: title styling
+        dpi: resolution for saving
+    """
+    def preprocess_images(source):
+        if not isinstance(source, np.ndarray):
+            source = source.detach().cpu().numpy()
+        return np.transpose(source, (0, 2, 3, 1))
+    
+    # preprocess and unpack
+    rgb_img      = preprocess_images(source1)[0]
+    sparse_map   = preprocess_images(source2)[0, :, :, 0]
+    metric_depth = preprocess_images(source4)[0, :, :, 0]
+
+    # set up figure + grid
+    fig = plt.figure(figsize=(14, 6))
+    gs  = gridspec.GridSpec(1, 5, width_ratios=[1, .05, .01, 1, .05], wspace=0.1)
+
+    # Left: overlay
+    ax0 = fig.add_subplot(gs[0, 0])
+    ax0.imshow(rgb_img.astype(np.uint8))
+    ys, xs = np.nonzero(sparse_map)
+    sc = ax0.scatter(
+        xs, ys,
+        c=metric_depth[sparse_map != 0],
+        cmap='viridis_r',
+        s=20, vmin=0.1, vmax=10
+    )
+    ax0.set_title('Input:RGB Image + Sparse Depth Points', fontsize=title_fontsize, fontweight=title_fontweight)
+    ax0.axis('off')
+    cax0 = fig.add_subplot(gs[0, 1])
+    pos0 = ax0.get_position()
+    h0 = pos0.height * 0.9
+    y0 = pos0.y0 + (pos0.height - h0)/2
+    cax0.set_position([pos0.x1, y0, cax0.get_position().width, h0])
+    cb0 = plt.colorbar(sc, cax=cax0)
+    cb0.ax.tick_params(labelsize=12)
+
+    # Right: metric depth
+    ax2 = fig.add_subplot(gs[0, 3])
+    im2 = ax2.imshow(metric_depth, cmap='viridis_r', vmin=0.1, vmax=10)
+    ax2.set_title('Metric Depth', fontsize=title_fontsize, fontweight=title_fontweight)
+    ax2.axis('off')
+    cax1 = fig.add_subplot(gs[0, 4])
+    pos2 = ax2.get_position()
+    h1 = pos2.height * 0.9
+    y1 = pos2.y0 + (pos2.height - h1)/2
+    cax1.set_position([pos2.x1, y1, cax1.get_position().width, h1])
+    cb1 = plt.colorbar(im2, cax=cax1)
+    cb1.ax.tick_params(labelsize=12)
+
+    # Make backgrounds transparent
+    fig.patch.set_facecolor('none')
+    for ax in fig.axes:
+        ax.patch.set_facecolor('none')
+
+    # Save with transparent background
+    fig.savefig(
+        save_path,
+        transparent=True,
+        bbox_inches='tight',
+        dpi=dpi
+    )
+    plt.close(fig)
+    print(f"Saved transparent figure to {save_path}")
+
+def display_images(
+    source1, source2, source3, source4,
+    title_fontsize=16,
+    title_fontweight='bold'
+):
     """
     Display only the overlay image and the metric depth map side-by-side in a single row with a spacer:
-        - Left: Overlay image (RGB background with scatter overlay from the sparse map,
-                where the scatter points are colored by metric depth).
-        - Right: Metric depth map.
+      - Left: Overlay image (RGB background with scatter overlay from the sparse map,
+              where the scatter points are colored by metric depth).
+      - Right: Metric depth map.
 
     Each image has an associated colorbar (set to 80% of the image height and centered vertically).
 
@@ -158,66 +309,73 @@ def display_images(source1, source2, source3, source4):
         source2: Sparse map tensor/array with shape (N, 1, H, W)
         source3: Relative depth map tensor/array with shape (N, 1, H, W) [not used here]
         source4: Metric depth map tensor/array with shape (N, 1, H, W)
+        title_fontsize: Font size for the subplot titles.
+        title_fontweight: Font weight for the subplot titles.
     """
     def preprocess_images(source):
-        # Convert to numpy if not already, and move channels from (N, C, H, W) to (N, H, W, C)
         if not isinstance(source, np.ndarray):
             source = source.detach().cpu().numpy()
         return np.transpose(source, (0, 2, 3, 1))
     
-    # Preprocess each source.
-    images1 = preprocess_images(source1)  # RGB image, shape: (N, H, W, 3)
-    images2 = preprocess_images(source2)  # Sparse map, shape: (N, H, W, 1)
-    images4 = preprocess_images(source4)  # Metric depth map, shape: (N, H, W, 1)
+    images1 = preprocess_images(source1)
+    images2 = preprocess_images(source2)
+    images4 = preprocess_images(source4)
 
-    # For simplicity, assume batch size = 1.
-    rgb_img      = images1[0]            # (H, W, 3)
-    sparse_map   = images2[0, :, :, 0]     # (H, W)
-    metric_depth = images4[0, :, :, 0]     # (H, W)
+    rgb_img      = images1[0]
+    sparse_map   = images2[0, :, :, 0]
+    metric_depth = images4[0, :, :, 0]
 
-    # Create a figure with 1 row and 5 columns:
-    # Column 0: Overlay image, Column 1: its colorbar,
-    # Column 2: spacer, Column 3: metric depth image, Column 4: its colorbar.
     fig = plt.figure(figsize=(14, 6))
-    gs = gridspec.GridSpec(nrows=1, ncols=5, width_ratios=[1, 0.05, 0.01, 1, 0.05], wspace=0.1)
+    gs = gridspec.GridSpec(
+        nrows=1, ncols=5,
+        width_ratios=[1, 0.05, 0.01, 1, 0.05],
+        wspace=0.1
+    )
 
-    # ------------------ Overlay Image ------------------
+    # Overlay image
     ax0 = fig.add_subplot(gs[0, 0])
     ax0.imshow(rgb_img)
-    # Find nonzero positions in the sparse map.
     rows, cols = np.nonzero(sparse_map)
-    # Use the corresponding metric depth values for coloring.
-    scatter_vals = metric_depth[sparse_map != 0]
-    sc = ax0.scatter(cols, rows, c=scatter_vals, cmap='viridis_r', s=20)
-    ax0.set_title('Overlay Image')
+    sc = ax0.scatter(
+        cols, rows,
+        c=metric_depth[sparse_map != 0],
+        cmap='viridis_r',
+        s=20
+    )
+    ax0.set_title(
+        'Overlay Image',
+        fontsize=title_fontsize,
+        fontweight=title_fontweight
+    )
     ax0.axis('off')
 
-    # Colorbar for the overlay image.
+    # Colorbar for overlay
     cax0 = fig.add_subplot(gs[0, 1])
-    pos_ax0 = ax0.get_position()
-    pos_cax0 = cax0.get_position()
-    new_height = pos_ax0.height * 0.9
-    new_y = pos_ax0.y0 + (pos_ax0.height - new_height) / 2
-    cax0.set_position([pos_ax0.x1, new_y, pos_cax0.width, new_height])
-    plt.colorbar(sc, cax=cax0)
+    pos = ax0.get_position()
+    height = pos.height * 0.9
+    y = pos.y0 + (pos.height - height) / 2
+    cax0.set_position([pos.x1, y, cax0.get_position().width, height])
+    cb0 = plt.colorbar(sc, cax=cax0)
+    cb0.ax.tick_params(labelsize=12)
 
-    # ------------------ Spacer Column ------------------
-    # No axis needed for the spacer. The wspace parameter and width_ratios provide spacing.
-
-    # ------------------ Metric Depth Map ------------------
+    # Metric depth map
     ax2 = fig.add_subplot(gs[0, 3])
     im = ax2.imshow(metric_depth, cmap='viridis_r')
-    ax2.set_title('Metric Depth')
+    ax2.set_title(
+        'Metric Depth',
+        fontsize=title_fontsize,
+        fontweight=title_fontweight
+    )
     ax2.axis('off')
 
-    # Colorbar for the metric depth map.
+    # Colorbar for metric depth
     cax1 = fig.add_subplot(gs[0, 4])
-    pos_ax2 = ax2.get_position()
-    pos_cax1 = cax1.get_position()
-    new_height = pos_ax2.height * 0.9
-    new_y = pos_ax2.y0 + (pos_ax2.height - new_height) / 2
-    cax1.set_position([pos_ax2.x1, new_y, pos_cax1.width, new_height])
-    plt.colorbar(im, cax=cax1)
+    pos2 = ax2.get_position()
+    height2 = pos2.height * 0.9
+    y2 = pos2.y0 + (pos2.height - height2) / 2
+    cax1.set_position([pos2.x1, y2, cax1.get_position().width, height2])
+    cb1 = plt.colorbar(im, cax=cax1)
+    cb1.ax.tick_params(labelsize=12)
 
     plt.show()
 
@@ -316,7 +474,7 @@ def show_images(tensor_images):
         
     
     plt.show()
-
+from matplotlib.colors import LogNorm
 def show_images_three_sources(source1, source2, source3):
     """
     Display images from four sources side by side in a row.
@@ -365,19 +523,20 @@ def show_images_three_sources(source1, source2, source3):
 
     for idx in range(batch_size):
         # Display source1 image
-        im1 = axes[idx][0].imshow(images1[idx])
+        im1 = axes[idx][0].imshow(images1[idx],cmap='viridis')
         axes[idx][0].set_title("Source 1")
         axes[idx][0].axis('off')
         plt.colorbar(im1, ax=axes[idx][0], fraction=0.046, pad=0.04)
 
         # Display source2 image
-        im2 = axes[idx][1].imshow(images2[idx])
+        #,cmap='Spectral',vmin=0.1, vmax=15
+        im2 = axes[idx][1].imshow(images2[idx],cmap='viridis')
         axes[idx][1].set_title("Source 2")
         axes[idx][1].axis('off')
         plt.colorbar(im2, ax=axes[idx][1], fraction=0.046, pad=0.04)
 
         # Display source3 image
-        im3 = axes[idx][2].imshow(images3[idx])
+        im3 = axes[idx][2].imshow(images3[idx],cmap='viridis_r')
         axes[idx][2].set_title("Source 3")
         axes[idx][2].axis('off')
         plt.colorbar(im3, ax=axes[idx][2], fraction=0.046, pad=0.04)
@@ -513,60 +672,63 @@ def resize_sparse_depth(depth, new_sizes):
     
     return outputs
 
-def show_images_two_sources(source1, source2):
+def show_images_two_sources(
+    source1, source2,
+    title_fontsize: int = 16,
+    title_fontweight: str = 'bold'
+):
     """
-    Display images from two sources side by side in a row.
+    Display images from two sources side by side in a row, with bold, larger titles.
     
     Args:
         source1, source2: Two input tensors or numpy arrays of images.
                           Expected shapes: (N, C, H, W) for tensors.
+        title_fontsize: Font size for titles.
+        title_fontweight: Font weight for titles.
     """
     def preprocess_images(source):
         if isinstance(source, np.ndarray):
             images = source
         else:  # Assume tensor
             images = source.detach().cpu().numpy()
-        images = np.transpose(images, (0, 2, 3, 1))  # Convert from CHW to HWC
-        return images
+        # Convert from (N, C, H, W) to (N, H, W, C)
+        return np.transpose(images, (0, 2, 3, 1))
 
-    # Preprocess both sources
     images1 = preprocess_images(source1)
     images2 = preprocess_images(source2)
-
-    # Ensure the batch sizes match
     assert images1.shape[0] == images2.shape[0], "Batch sizes must match."
 
     batch_size = images1.shape[0]
-    fig, axes = plt.subplots(batch_size, 2, figsize=(10, 5 * batch_size))  # 2 columns for sources
+    fig, axes = plt.subplots(batch_size, 2, figsize=(10, 5 * batch_size))
 
-    if batch_size == 1:  # Handle case where batch size is 1
+    # If batch_size == 1, wrap axes in a list for uniform indexing
+    if batch_size == 1:
         axes = [axes]
 
-    # for idx in range(batch_size):
-    #     # Display source1 image
-    #     axes[idx][0].imshow(images1[idx])
-    #     axes[idx][0].set_title("Source 1")
-    #     axes[idx][0].axis('off')
-
-    #     # Display source2 image
-    #     axes[idx][1].imshow(images2[idx])
-    #     axes[idx][1].set_title("Source 2")
-    #     axes[idx][1].axis('off')
     for idx in range(batch_size):
-        # Display source1 image
-        im1 = axes[idx][0].imshow(images1[idx])
-        axes[idx][0].set_title("RGB Image")
-        axes[idx][0].axis('off')
-        # plt.colorbar(im1, ax=axes[idx][0], fraction=0.046, pad=0.04)
+        # Source 1: RGB image
+        ax1 = axes[idx][0]
+        ax1.imshow(images1[idx].astype(np.uint8))
+        ax1.set_title(
+            "RGB Image",
+            fontsize=title_fontsize,
+            fontweight=title_fontweight
+        )
+        ax1.axis('off')
 
-        # Display source2 image
-        im2 = axes[idx][1].imshow(images2[idx],cmap='viridis_r')
-        axes[idx][1].set_title("Metric Depth Prediction")
-        axes[idx][1].axis('off')
-        plt.colorbar(im2, ax=axes[idx][1], fraction=0.046, pad=0.04)
+        # Source 2: Relative depth prediction
+        ax2 = axes[idx][1]
+        im2 = ax2.imshow(images2[idx], cmap='viridis')
+        ax2.set_title(
+            "Relative Depth Prediction",
+            fontsize=title_fontsize,
+            fontweight=title_fontweight
+        )
+        ax2.axis('off')
 
     plt.tight_layout()
     plt.show()
+
 
 def save_images_two_sources(source1, source2, save_dir='.', prefix='figure'):
     """
@@ -963,9 +1125,9 @@ class AffinityDC(DepthModel):
         super().__init__()
 
         self.min_pred = 0.1
-        self.max_pred = 25
-        self.ga_max = 100
-        self.biliteral_kernal_size = 17
+        self.max_pred = 20
+        self.ga_max = 20
+        self.biliteral_kernal_size = 5
         self.min_pred_inv = 1.0/self.min_pred
         self.max_pred_inv = 1.0/self.max_pred
         self.train_dino = kwargs['train_dino']
@@ -1035,36 +1197,17 @@ class AffinityDC(DepthModel):
         
         patch_h, patch_w = h // self.patch_size, w // self.patch_size
         rel_depth, extracted_features = self.depth_head(features, patch_h, patch_w, prompt_depth)
-        # rel_depth_disp = rel_depth
-        # rel_depth = torch.where(rel_depth <0.25, 0, rel_depth)
 
-        # rel_depth = self.depth_head(features, patch_h, patch_w)
-        # rel_depth = F.relu(rel_depth)
-        # show_images_two_sources(x,rel_depth)
-        # breakpoint()
-        
-
-
-        
-        
-        
-        
+        # sparse_depth_inv = sparse_depth_inv.half()
+        # sparse_mask = sparse_mask.half()
+        # rel_depth = rel_depth.half()
         estimator = LeastSquaresEstimatorTorch(rel_depth, sparse_depth_inv, sparse_mask)
         estimator.compute_scale_and_shift() 
         estimator.apply_scale_and_shift()
         estimator.clamp_min_max(clamp_min=self.min_pred,clamp_max=self.ga_max)
         ga_result = estimator.output
         d = estimator.output.clone()
-        # show_images_two_sources(x, 1.0/d)
-        
-
-        # normals = self.surface_normal(ga_result)
-        # print(normals.shape)
-        # show_images(normals)
-        # breakpoint()
-        # gradient_mag_map, _ = compute_gradient_map(rel_depth)
-        # gradient_map2 = compute_gradient_map(ga_result)
-        # show_images_four_sources(x, ga_result, gradient_mag_map, gradient_angle_map)
+        # show_images(1.0/ga_result)
 
         ga_mask = (rel_depth >0).float() # where infinte area is, actually using the reltive map is better
         sparse_and_ga_mask  = sparse_mask * ga_mask
@@ -1072,102 +1215,21 @@ class AffinityDC(DepthModel):
         scale_residual = torch.zeros_like(sparse_depth_inv)
         scale_residual[sparse_and_ga_mask.bool()] = sparse_depth_inv[sparse_and_ga_mask.bool()] / ga_result[sparse_and_ga_mask.bool()]
 
-        # dense_residual = joint_bilateral_filter(scale_residual, ga_result, kernel_size=30, sigma_spatial=5.0, sigma_depth=0.1)
-        # dense_residual = densify_sparse_residual_gaussian(scale_residual)
-        # dense_residual = bilateral_filter(scale_residual, ga_result, kernel_size=15, sigma_spatial=5, sigma_depth=0.1)
-        # dense_residual1 = bilateral_filter(scale_residual, ga_result, kernel_size=15, sigma_spatial=5, sigma_depth=0.05)
         scale_residual[scale_residual==0] = 1
-        dense_residual = joint_bilateral_filter_filled_ones(scale_residual, ga_result, sigma_s=5, sigma_r=0.01,kernel_size=self.biliteral_kernal_size)
+        dense_residual = joint_bilateral_filter_filled_ones(scale_residual, ga_result, sigma_s=2, sigma_r=0.001,kernel_size=self.biliteral_kernal_size)
+        # show_images_two_sources(ga_result,dense_residual)
         
-        
-        # dense_residual[dense_residual == 0] = 1
-
-        # dense_residual2 = bilateral_filter_vector(scale_residual, ga_result, kernel_size=self.biliteral_kernal_size, sigma_spatial=3, sigma_depth=0.01)
-        # dense_residual2[dense_residual2 == 0] = 1
-        
-        
-        # show_images_two_sources(d,dense_residual)
-        # dense_residual2 = downsampled_joint_bilateral_filter(
-        #     scale_residual, ga_result,
-        #     downscale_factor=4, kernel_size=9,
-        #     sigma_spatial=5.0, sigma_depth=0.1
-        #     )
-        # dense_residual = kernel_interpolate(scale_residual, sparse_and_ga_mask, kernel_size=30)
-        # dense_residual = densify_residual_interpolation(scale_residual, scale_factor=0.25)
-        # sparse_mask = (prompt_depth < self.max_pred) * (prompt_depth > self.min_pred)
-        # show_images_three_sources(dense_residual, scale_residual, ga_result)
-        # show_images_four_sources(ga_result,x, prompt_depth, show_images_four_sources(x,rel_depth,1.0/ga_result, 1.0/pred)dense_residual)
-        # show_images_three_sources(ga_result, sparse_depth_inv, scale_residual)
-        # guide = compute_affinity_map_9(ga_result)
-
-        # sparse_residual_filled = scale_residual.clone()
-        # # sparse_residual_filled[~sparse_and_ga_mask.bool()] = 1.0
-
-
-
-        # scale = sparse_residual_filled
-        # sparse = scale_residual
-        # # pred_inter = [pred_init]
-
-        
-        # guide_sum = torch.sum(guide.abs(), dim=1, keepdim=True)
-        # guide = torch.div(guide, guide_sum)
-        
-        # for i in range(6):
-        #     scale = self.refiner(guide, scale, sparse_residual_filled)
-        #     scale = sparse * sparse_and_ga_mask + (1 - sparse_and_ga_mask) * scale
-        # show_images_three_sources(ga_result,scale_residual, scale)
-        # breakpoint()
-        
-        # scale_residual_np = scale_residual.cpu().numpy() 
-        # sparse_mask_np = sparse_and_ga_mask.bool().cpu().numpy() 
-        # int_scale_residual_batch = []
-        # for i in range(scale_residual.shape[0]):
-
-        #     ScaleMapInterpolator = AnchorInterpolator2D(
-        #         sparse_depth = np.squeeze(scale_residual_np[i], axis = 0),
-        #         valid = np.squeeze(sparse_mask_np[i], axis = 0),
-        #     )
-        #     ScaleMapInterpolator.generate_interpolated_scale_map(
-        #         interpolate_method='linear', 
-        #         fill_corners=False
-        #     )
-            
-        #     int_scale_residual_batch.append(ScaleMapInterpolator.interpolated_scale_map.astype(np.float32))
-
-        # int_scale_residual_batch = np.stack(int_scale_residual_batch)
-        # int_scale_residual = torch.from_numpy(int_scale_residual_batch).float().to(prompt_depth.device) 
-        # int_scale_residual = int_scale_residual.unsqueeze(1)
-        # show_images_four_sources(dense_residual, int_scale_residual, scale_residual, ga_result)
-        # show_images_two_sources(ga_result, int_scale_residual)
-
-
-        # ga_resized = nn.functional.interpolate(
-        #     ga_result, (192, 256), mode="bilinear", align_corners=True)
-        
-        # scale_resized = nn.functional.interpolate(
-        #     int_scale_residual, (192, 256), mode="bilinear", align_corners=True)
-        
-        # prediction is in 336,448
-        # print(sparse_and_ga_mask.dtype)
-        # scale_and_mask = torch.cat([scale_residual, sparse_and_ga_mask], dim = 1)
-        # pred, scales = self.scale_map_learner(ga_result, dense_residual, d, dinov2_features_list)
+     
         pred, scales = self.scale_map_learner(ga_result, dense_residual, d, extracted_features)
-        # display_images(image_no_norm,prompt_depth,rel_depth,1/pred)
-        # show_images_two_sources(image_no_norm,1.0/pred)
-        # save_images_two_sources(image_no_norm, 1.0/pred, save_dir='/media/jay/Lexar/underwater_depth_videos/canyon/images', prefix='depth_vis')
-
-        # show_images(1.0/pred)
-        # pred_disp = pred*ga_mask
-        # if self.min_pred is not None:
-        #     min_pred_inv = 1.0/self.min_pred
-        #     pred_disp[pred_disp > min_pred_inv] = min_pred_inv
-        # if self.max_pred is not None:
-        #     max_pred_inv = 1.0/self.max_pred
-        #     pred_disp[pred_disp < max_pred_inv] = max_pred_inv
-
-        # show_images_two_sources(rel_depth,pred)
-        # show_images_four_sources(x,rel_depth,1.0/ga_result, 1.0/pred)
+       
+        # display_and_save_images(image_no_norm*255, prompt_depth, rel_depth, 1.0/pred, save_path='./turbid_test.png')
+        # breakpoint()
+        # plot_sparse_depth_tensor(prompt_depth)
+        # display_images(image_no_norm, prompt_depth, rel_depth, 1.0/pred)
+        # show_images_two_sources(image_no_norm*255,1.0/pred)
+        # show_images_three_sources(image_no_norm,ga_result, pred)
+        # show_images_two_sources(1.0/ga_result,1.0/pred)
+        # show_images_four_sources(ga_result,dense_residual,ga_result*dense_residual,pred)
         output = dict(metric_depth=1.0/pred)
         output['inverse_depth'] = pred
         return output
